@@ -1,0 +1,12 @@
+[project]
+name = "ee_session_client"
+version = "0.0.0"
+description = "extends the capabilities of the earthengine-api by providing custom session management and client interactions"
+readme = "README.rst"
+license = { file = "LICENSE" }
+authors = [
+	{ name = "Daniel Guerrero", email = "dfgm2006@gmail.com" }
+]
+dependencies = [
+	"earthengine-api",
+]
