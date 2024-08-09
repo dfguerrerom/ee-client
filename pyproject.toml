@@ -1,5 +1,5 @@
 [project]
-name = "eeclient"
+name = "ee-client"
 version = "0.0.0"
 description = "extends the capabilities of the earthengine-api by providing custom session management and client interactions"
 readme = { file = "README.rst" , content-type = "text/x-rst" }
