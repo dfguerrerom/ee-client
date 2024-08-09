@@ -1,6 +1,6 @@
 from typing import Literal
 import httpx
-from .exceptions import EERestException
+from eeclient.exceptions import EERestException
 
 
 class Session:

@@ -1,10 +1,10 @@
 Earth Engine Session Client
 ===========================
 
-ee-session-client extends the capabilities of the earthengine-api by providing custom session management and client interactions
+ee-client extends the capabilities of the earthengine-api by providing custom session management and client interactions
 
 
-ee-session-client is a Python package designed to extend the capabilities of the Google Earth Engine (GEE) API by providing custom session management and client interactions. This package allows users to make authenticated requests to the Earth Engine REST API using their own credentials, facilitating seamless integration and customization of GEE functionalities.
+ee-client is a Python package designed to extend the capabilities of the Google Earth Engine (GEE) API by providing custom session management and client interactions. This package allows users to make authenticated requests to the Earth Engine REST API using their own credentials, facilitating seamless integration and customization of GEE functionalities.
 
 Key Features
 ------------
@@ -22,20 +22,19 @@ To install the package, simply use pip:
 
 .. code-block:: bash
 
-    pip install ee-session-client # Not yet developed
-
+    pip install ee-client # Not yet developed
 
 Usage
 -----
 
-Here are a few examples of how to use ee-session-client in your projects:
+Here are a few examples of how to use ee-client in your projects:
 
 Initialization and Authentication
 +++++++++++++++++++++++++++++++++
 
 .. code-block:: python
 
-    from ee_session_client import Session, get_info, get_asset
+    from eeclient import Session, get_info, get_asset
 
     # Define your credentials and project ID
     credentials = {
@@ -72,7 +71,7 @@ Fetching Map Tiles:
 
 .. code-block:: python
     
-    from ee_session_client import get_map_id, get_map_tile
+    from eeclient import get_map_id, get_map_tile
 
     # Example: Get map ID for an Earth Engine image
     image = ee.Image('COPERNICUS/S2/20190726T104031_20190726T104035_T31TGL')
@@ -90,7 +89,7 @@ WIP
 .. code-block:: python
 
     import ee
-    import ee_session_client
+    import eeclient
 
     # Custom method to get information about an Earth Engine Number object
     def custom_get_info(self, session):
