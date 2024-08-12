@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eeclient"
-version = "0.0.0"
+version = "0.1.0"
 description = "extends the capabilities of the earthengine-api by providing custom session management and client interactions"
-readme = { file = "README.rst" , content-type = "text/x-rst" }
+readme = { file = "README.rst",  content-type = "text/x-rst" }
 authors = [
     { name = "Daniel Guerrero", email = "dfgm2006@gmail.com" }
 ]
@@ -49,7 +49,7 @@ branch = true
 [tool.commitizen]
 tag_format = "v$major.$minor.$patch$prerelease"
 update_changelog_on_bump = false
-version = "0.0.0"
+version = "0.1.0"
 version_files = [
     "pyproject.toml:version",
     "eeclient/__init__.py:__version__",
