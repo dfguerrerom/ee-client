@@ -1,10 +1,15 @@
 Earth Engine Session Client
 ===========================
 
-ee-client extends the capabilities of the earthengine-api by providing custom session management and client interactions
+This repository starts as a an alternative for the current calls to Earth Engine API of `earthengine-api <https://github.com/google/earthengine-api>`_.
 
+The main issue with the current client api doest not allow multi-user sessions since it uses a global session object. This repository aims to present a workaround for this issue but only in very specific cases: 
 
-ee-client is a Python package designed to extend the capabilities of the Google Earth Engine (GEE) API by providing custom session management and client interactions. This package allows users to make authenticated requests to the Earth Engine REST API using their own credentials, facilitating seamless integration and customization of GEE functionalities.
+- Create map id: `getMapId`
+- Compute values: `getInfo`
+- Send tasks to the server 
+
+ee-client is a Python package designed to extend the capabilities of the Google Earth Engine (GEE) API by providing custom session management and client interactions. This package allows users to make authenticated requests to the Earth Engine REST API using thread safe credentials, facilitating seamless integration and customization of GEE functionalities.
 
 Key Features
 ------------
