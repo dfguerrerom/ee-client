@@ -1,5 +1,9 @@
+[build-system]
+requires = ["setuptools>=61.2", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "ee-client"
+name = "eeclient"
 version = "0.0.0"
 description = "extends the capabilities of the earthengine-api by providing custom session management and client interactions"
 readme = { file = "README.rst" , content-type = "text/x-rst" }
@@ -21,6 +25,9 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 urls = {Homepage = "https://github.com/dfguerrerom/ee-client"}
+
+[tool.setuptools.packages.find]
+include = ["eeclient*"]
 
 [tool.ruff]
 ignore-init-module-imports = true
