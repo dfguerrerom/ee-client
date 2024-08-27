@@ -1,10 +1,18 @@
-from typing import Literal
+import json
+from pathlib import Path
+from typing import Literal, Union
 import httpx
+from ee.oauth import CLIENT_ID, CLIENT_SECRET, SCOPES, get_credentials_path
+from eeclient.aioclient import PathLike
 from eeclient.exceptions import EERestException
 
 
 class Session:
-    def __init__(self, credentials, ee_project):
+    def __init__(self, ee_project, credentials: Union[PathLike, dict]):
+
+        if isinstance(credentials, (str, Path)) or not credentials:
+            credentials_path = credentials or get_credentials_path()
+            credentials = json.loads(Path(credentials_path).read_text())
 
         self.credentials = credentials
         self.project = ee_project
