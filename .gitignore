@@ -5,6 +5,7 @@ __pycache__/
 test*.ipynb
 # C extensions
 *.so
+config.json
 
 # Distribution / packaging
 .Python
