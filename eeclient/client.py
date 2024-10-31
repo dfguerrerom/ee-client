@@ -8,26 +8,52 @@ from eeclient.exceptions import EERestException
 
 
 class Session:
-    def __init__(self, ee_project, credentials: Union[PathLike, dict]):
+    def __init__(
+        self,
+        ee_project: str,
+        credentials: Union[PathLike, dict],
+        from_headers: bool = False,
+    ):
+        """Session
 
-        if isinstance(credentials, (str, Path)) or not credentials:
-            credentials_path = credentials or get_credentials_path()
-            credentials = json.loads(Path(credentials_path).read_text())
+        Args:
+            ee_project str
+        """
 
-        self.credentials = credentials
+        self.from_headers = from_headers
         self.project = ee_project
+        self.credentials = None
 
-        self.headers = {
-            "x-goog-user-project": ee_project,
-            "Authorization": f"Bearer {self._get_access_token()}",
-        }
+        # If initializing from credentials and project, load credentials
+        if not from_headers:
+            if not ee_project or not credentials:
+                raise ValueError(
+                    "Both ee_project and credentials must be provided when from_headers is False."
+                )
 
-        self.client = httpx.Client(headers=self.headers)
+            if isinstance(credentials, (str, Path)) or not credentials:
+                credentials_path = credentials or get_credentials_path()
+                credentials = json.loads(Path(credentials_path).read_text())
+
+            self.credentials = credentials
+            self.headers = {
+                "x-goog-user-project": ee_project,
+                "Authorization": f"Bearer {self._get_access_token()}",
+            }
+            self.client = httpx.Client(headers=self.headers)
+        else:
+            headers = self.get_headers()
+            self.client = httpx.Client()
 
     def _set_url_project(self, url):
         """Set the project in the url"""
 
         return url.format(project=self.project)
+
+    def get_headers():
+        """Get the headers from gee and pass them"""
+
+        return json.loads((Path(__file__).parent / "config.json").read_text())
 
     def rest_call(
         self,
