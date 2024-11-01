@@ -1,0 +1,10 @@
+{
+    "python.linting.mypyEnabled": true,
+    "python.linting.enabled": true,
+    "typeCheckingMode": "strict",
+    "reportMissingTypeStubs": true,
+    "reportOptionalSubscript": true,
+    "git.ignoreLimitWarning": true,
+    "python.analysis.typeCheckingMode": "standard"
+}
+  

@@ -6,6 +6,7 @@ test*.ipynb
 # C extensions
 *.so
 config.json
+test_with_headers.ipynb
 
 # Distribution / packaging
 .Python

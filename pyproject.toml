@@ -36,9 +36,8 @@ dev = [
     "commitizen",
     "nox",
     "tomli",
-    "jupyter",
-    "voila",
     "mypy",
+    "pytest",
 ]
 
 [tool.setuptools.packages.find]
