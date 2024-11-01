@@ -36,8 +36,6 @@ dev = [
     "commitizen",
     "nox",
     "tomli",
-    "jupyter",
-    "voila",
     "mypy",
 ]
 

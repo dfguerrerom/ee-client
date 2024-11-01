@@ -26,9 +26,14 @@ class SepalHeaders(TypedDict):
 """Headers sent from sepal to Solara for a given user"""
 
 
-class GEEHeaders(TypedDict):
-    x_goog_user_project: str
-    Authorization: str
+GEEHeaders = TypedDict("GEEHeaders", {"x-goog-user-project": str, "Authorization": str})
 
 
 """This will be the headers used for each request to the GEE API"""
+
+
+class Credentials(TypedDict):
+    client_id: str
+    client_secret: str
+    refresh_token: str
+    grant_type: str
