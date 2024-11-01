@@ -12,7 +12,8 @@ authors = [
 ]
 dependencies = [
 	"earthengine-api",
-    "httpx"
+    "httpx",
+    "aiogoogle"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
