@@ -37,6 +37,7 @@ dev = [
     "nox",
     "tomli",
     "mypy",
+    "pytest",
 ]
 
 [tool.setuptools.packages.find]

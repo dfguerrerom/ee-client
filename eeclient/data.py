@@ -8,7 +8,7 @@ from ee import _cloud_api_utils
 
 from ee.data import TileFetcher
 
-from eeclient.client import Session
+from eeclient.client import EESession
 
 # Types
 Image = ee.image.Image
@@ -88,7 +88,7 @@ def get_ee_image(
 
 
 def get_map_id(
-    session: Session,
+    session: EESession,
     ee_image: Image,
     vis_params: Optional[MapTileOptions] = None,
     bands: Optional[str] = None,
@@ -127,8 +127,6 @@ def get_map_id(
     if visualization_options:
         request_body["visualizationOptions"] = visualization_options
 
-    request_body = json.dumps(request_body)
-
     response = session.rest_call("POST", url, data=request_body)
     map_name = response["name"]
 
@@ -147,20 +145,22 @@ def get_map_id(
     }
 
 
-def get_info(session: Session, ee_object: ComputedObject, workloadTag=None):
+def get_info(session: EESession, ee_object: ComputedObject, workloadTag=None):
     """Get the info of an Earth Engine object"""
 
     data = {
         "expression": serializer.encode(ee_object),
         "workloadTag": workloadTag,
     }
+    # request_body = json.dumps(data)
 
     url = "https://earthengine.googleapis.com/v1/projects/{project}/value:compute"
+    url = "https://earthengine.googleapis.com/v1alpha/projects/{project}/value:compute"
 
     return session.rest_call("POST", url, data=data)["result"]
 
 
-def get_asset(session: Session, ee_asset_id: str):
+def get_asset(session: EESession, ee_asset_id: str):
     """Get the asset info from the asset id"""
 
     url = (

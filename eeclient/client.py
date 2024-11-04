@@ -24,6 +24,7 @@ class EESession:
         ee_project: Optional[str] = None,
         credentials_path: Union[Path, str, None] = None,
         credentials_dict: Optional[Credentials] = None,
+        test=False,
     ):
         """Session that handles two scenarios to set the headers for the Earth Engine API
 
@@ -35,15 +36,19 @@ class EESession:
 
         """
         self._headers: Optional[GEEHeaders] = None
+        self.test = test
 
-        self.project = ee_project
+        self.project_id = ee_project
         self.credentials_path = credentials_path
         self.credentials_dict = credentials_dict
 
         self.sepal_headers = sepal_headers
 
+        if test:
+            self._headers = self.get_headers()
+
         # If initializing from credentials and project, load credentials
-        if not self.sepal_headers:
+        elif not self.sepal_headers:
             if not ee_project or not credentials_path or not credentials_dict:
                 raise ValueError(
                     "Both ee_project and credentials must be provided when from_headers is False."
@@ -57,29 +62,36 @@ class EESession:
                 "Authorization": f"Bearer {self._get_access_token()}",
             }
 
-        else:
+        elif self.sepal_headers:
             self._headers = self.get_headers()
 
     @property
     def headers(self) -> Optional[GEEHeaders]:
-        return self._headers
+        return self.get_headers()
 
     @headers.setter
     def headers(self, headers: Optional[SepalHeaders]) -> None:
+        print("setting headers")
         self.sepal_headers = headers
         if self.sepal_headers:
             self._headers = self.get_headers()
 
     def _set_url_project(self, url: str) -> str:
         """Set the project in the url"""
-        return url.format(project=self.project)
+
+        return url.format(project=self.project_id)
 
     def is_expired(self, expiry_date: int) -> bool:
         """Returns if a token is about to expire"""
+        print("Checking if token is expired")
+
         return expiry_date - time.time() < 60
 
     def get_headers(self) -> GEEHeaders:
         """Set the headers from SEPAL"""
+
+        if self.test and not self.sepal_headers:
+            self.headers = self.get_fresh_sepal_headers()
 
         if self.sepal_headers:
 
@@ -87,16 +99,20 @@ class EESession:
             google_tokens: GoogleTokens = self.sepal_headers["googleTokens"]
 
             expiry_date = google_tokens["accessTokenExpiryDate"]
-            project_id = google_tokens["projectId"]
+            self.project_id = google_tokens["projectId"]
+            print("project_id", self.project_id)
 
             if not self.is_expired(expiry_date):
                 access_token = google_tokens["accessToken"]
             else:
+                print(
+                    "Expired token... refreshing",
+                )
                 self.sepal_headers = self.get_fresh_sepal_headers()
                 return self.get_headers()
 
             return {
-                "x-goog-user-project": project_id,
+                "x-goog-user-project": self.project_id,
                 "Authorization": f"Bearer {access_token}",
             }
 
@@ -109,15 +125,16 @@ class EESession:
         """This is temporary until the sepal API is implemented"""
 
         sepal_password = os.getenv("SEPAL_PASSWORD", "")
-        sepal_username = os.getenv("SEPAL_USERNAME", "")
+        sepal_username = os.getenv("SEPAL_USER", "")
 
-        auth = httpx.BasicAuth(username=sepal_password, password=sepal_username)
+        auth = httpx.BasicAuth(username=sepal_username, password=sepal_password)
 
         credentials_file = f"https://sepal.io/api/user-files/download?path=%2F.config%2Fearthengine%2Fcredentials"
 
         with httpx.Client() as client:
             response = client.get(credentials_file, auth=auth)
             credentials = response.json()
+            print(credentials)
 
             return {
                 "id": 1,
@@ -141,17 +158,19 @@ class EESession:
         method: Literal["GET", "POST"],
         url: str,
         data: Optional[Dict] = None,  # type: ignore
-    ):
+    ) -> Dict[str, Any]:
         """Make a call to the Earth Engine REST API"""
+
         url = self._set_url_project(url)
+        print("url", url)
 
         if self.headers:
 
             # Explicitly cast `data` to `Optional[dict]`
-            data_json = cast(Optional[Dict[str, Any]], data)
+            # data_json = cast(Optional[Dict[str, Any]], data)
 
             with httpx.Client(headers=self.headers) as client:  # type: ignore
-                response = client.request(method, url, json=data_json)
+                response = client.request(method, url, json=data)
 
             if response.status_code >= 400:
                 if "application/json" in response.headers.get("Content-Type", ""):
@@ -165,6 +184,8 @@ class EESession:
                     )
 
             return response.json()
+
+        return {}
 
     def _get_access_token(self) -> str:
         """Get the access token from the refresh token using the credentials file"""
