@@ -1,9 +1,12 @@
 import json
+import os
 from pathlib import Path
 import time
-from typing import Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union, cast
 
 import httpx
+import requests
+from requests.auth import HTTPBasicAuth
 from eeclient.exceptions import EERestException
 from eeclient.typing import Credentials, GEEHeaders, GoogleTokens, SepalHeaders
 
@@ -29,7 +32,7 @@ class EESession:
         Args:
             ee_project (str): The project id of the Earth Engine project
             credentials (Union[PathLike, dict]): The credentials to use for the session
-            sepal_headers (Union[SepalHeaders, None], optional): The headers sent by SEPAL. Defaults to None.
+
         """
         self._headers: Optional[GEEHeaders] = None
 
@@ -79,16 +82,17 @@ class EESession:
         """Set the headers from SEPAL"""
 
         if self.sepal_headers:
-            google_tokens: GoogleTokens = self.sepal_headers["googleTokens"]
 
             username = self.sepal_headers["username"]
+            google_tokens: GoogleTokens = self.sepal_headers["googleTokens"]
+
             expiry_date = google_tokens["accessTokenExpiryDate"]
             project_id = google_tokens["projectId"]
 
             if not self.is_expired(expiry_date):
                 access_token = google_tokens["accessToken"]
             else:
-                self.sepal_headers = self.refresh_sepal_google_tokens(username)
+                self.sepal_headers = self.get_fresh_sepal_headers()
                 return self.get_headers()
 
             return {
@@ -101,39 +105,53 @@ class EESession:
         else:
             raise ValueError("Headers are not set.")
 
-    # def get_sepal_google_tokens(self, username: str) -> GoogleTokens:
+    def get_fresh_sepal_headers(self) -> SepalHeaders:
+        """This is temporary until the sepal API is implemented"""
 
-    #     if self.sepal_headers:
-    #         credentials_endpoint = f"/api/users/{username}/cr/edentials"
-    #         # url = f"https://sepal.io{credentials_endpoint}"
+        sepal_password = os.getenv("SEPAL_PASSWORD", "")
+        sepal_username = os.getenv("SEPAL_USERNAME", "")
 
-    #         # with httpx.Client(headers=self.sepal_headers) as client:
-    #         #     response = client.get(url)
+        auth = httpx.BasicAuth(username=sepal_password, password=sepal_username)
 
-    # data = response.json()
-    # google_tokens = GoogleTokens(
-    #     accessToken=data["accessToken"],
-    #     refreshToken=data["refreshToken"],
-    #     accessTokenExpiryDate=data["accessTokenExpiryDate"],
-    #     REFRESH_IF_EXPIRES_IN_MINUTES=data["REFRESH_IF_EXPIRES_IN_MINUTES"],
-    #     projectId=data["projectId"],
-    #     legacyProject=data["legacyProject"],
-    # )
-    # return google_tokens
+        credentials_file = f"https://sepal.io/api/user-files/download?path=%2F.config%2Fearthengine%2Fcredentials"
+
+        with httpx.Client() as client:
+            response = client.get(credentials_file, auth=auth)
+            credentials = response.json()
+
+            return {
+                "id": 1,
+                "username": "dguerrero",
+                "googleTokens": {
+                    "accessToken": credentials["access_token"],
+                    "accessTokenExpiryDate": credentials["access_token_expiry_date"],
+                    "projectId": credentials["project_id"],
+                    "refreshToken": "",
+                    "REFRESH_IF_EXPIRES_IN_MINUTES": 10,
+                    "legacyProject": "",
+                },
+                "status": "ACTIVE",
+                "roles": ["USER"],
+                "systemUser": False,
+                "admin": False,
+            }
 
     def rest_call(
         self,
         method: Literal["GET", "POST"],
         url: str,
-        data: Optional[dict] = None,  # type: ignore
+        data: Optional[Dict] = None,  # type: ignore
     ):
         """Make a call to the Earth Engine REST API"""
         url = self._set_url_project(url)
 
         if self.headers:
 
-            with httpx.Client(headers=self.headers) as client:
-                response = client.request(method, url, json=data)
+            # Explicitly cast `data` to `Optional[dict]`
+            data_json = cast(Optional[Dict[str, Any]], data)
+
+            with httpx.Client(headers=self.headers) as client:  # type: ignore
+                response = client.request(method, url, json=data_json)
 
             if response.status_code >= 400:
                 if "application/json" in response.headers.get("Content-Type", ""):
@@ -164,7 +182,3 @@ class EESession:
             )
 
         return response.json().get("access_token")
-
-    def refresh_sepal_google_tokens(self, username: str) -> SepalHeaders:
-        # Implement this method
-        ...

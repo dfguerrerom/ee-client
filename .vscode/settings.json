@@ -5,6 +5,6 @@
     "reportMissingTypeStubs": true,
     "reportOptionalSubscript": true,
     "git.ignoreLimitWarning": true,
-    "python.analysis.typeCheckingMode": "strict"
+    "python.analysis.typeCheckingMode": "standard"
 }
   
