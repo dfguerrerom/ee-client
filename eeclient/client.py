@@ -101,9 +101,11 @@ class EESession:
         if self.sepal_headers:
 
             username = self.sepal_headers["username"]
+
             google_tokens: GoogleTokens = self.sepal_headers["googleTokens"]
-            expiry_date = google_tokens["accessTokenExpiryDate"]
+
             self.project_id = google_tokens["projectId"]
+            expiry_date = google_tokens["accessTokenExpiryDate"]
 
             if not self.is_expired(expiry_date):
                 access_token = google_tokens["accessToken"]
