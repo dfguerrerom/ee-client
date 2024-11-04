@@ -11,6 +11,9 @@ from eeclient.exceptions import EERestException
 from eeclient.typing import Credentials, GEEHeaders, GoogleTokens, SepalHeaders
 
 
+EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
+
+
 def read_credentials(credentials_path: Union[str, Path]) -> Credentials:
     """Read the credentials from a file"""
 
@@ -77,9 +80,11 @@ class EESession:
             self._headers = self.get_headers()
 
     def _set_url_project(self, url: str) -> str:
-        """Set the project in the url"""
+        """Set the API URL with the project id"""
 
-        return url.format(project=self.project_id)
+        return url.format(
+            EARTH_ENGINE_API_URL=EARTH_ENGINE_API_URL, project=self.project_id
+        )
 
     def is_expired(self, expiry_date: int) -> bool:
         """Returns if a token is about to expire"""
@@ -97,10 +102,8 @@ class EESession:
 
             username = self.sepal_headers["username"]
             google_tokens: GoogleTokens = self.sepal_headers["googleTokens"]
-
             expiry_date = google_tokens["accessTokenExpiryDate"]
             self.project_id = google_tokens["projectId"]
-            print("project_id", self.project_id)
 
             if not self.is_expired(expiry_date):
                 access_token = google_tokens["accessToken"]
@@ -165,9 +168,6 @@ class EESession:
         print("url", url)
 
         if self.headers:
-
-            # Explicitly cast `data` to `Optional[dict]`
-            # data_json = cast(Optional[Dict[str, Any]], data)
 
             with httpx.Client(headers=self.headers) as client:  # type: ignore
                 response = client.request(method, url, json=data)

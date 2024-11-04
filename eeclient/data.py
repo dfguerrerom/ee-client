@@ -112,7 +112,7 @@ def get_map_id(
     # renname
     format_ = format
 
-    url = "https://earthengine.googleapis.com/v1alpha/projects/{project}/maps"
+    url = "{EARTH_ENGINE_API_URL}/projects/{project}/maps"
 
     request_body = {
         "expression": serializer.encode(ee_image_request, for_cloud_api=True),
@@ -155,7 +155,6 @@ def get_info(session: EESession, ee_object: ComputedObject, workloadTag=None):
     # request_body = json.dumps(data)
 
     url = "https://earthengine.googleapis.com/v1/projects/{project}/value:compute"
-    url = "https://earthengine.googleapis.com/v1alpha/projects/{project}/value:compute"
 
     return session.rest_call("POST", url, data=data)["result"]
 
@@ -163,10 +162,7 @@ def get_info(session: EESession, ee_object: ComputedObject, workloadTag=None):
 def get_asset(session: EESession, ee_asset_id: str):
     """Get the asset info from the asset id"""
 
-    url = (
-        "https://earthengine.googleapis.com/v1alpha/projects/{project}/assets/"
-        + ee_asset_id
-    )
+    url = "{EARTH_ENGINE_API_URL}/projects/{project}/assets/" + ee_asset_id
 
     return session.rest_call("GET", url)
 
