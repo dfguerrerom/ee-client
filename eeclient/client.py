@@ -28,6 +28,7 @@ class EESession:
         credentials_path: Union[Path, str, None] = None,
         credentials_dict: Optional[Credentials] = None,
         test=False,
+        force_refresh=False,
     ):
         """Session that handles two scenarios to set the headers for the Earth Engine API
 
@@ -40,6 +41,7 @@ class EESession:
         """
         self._headers: Optional[GEEHeaders] = None
         self.test = test
+        self.force_refresh = force_refresh
 
         self.project_id = ee_project
         self.credentials_path = credentials_path
@@ -63,6 +65,7 @@ class EESession:
             self._headers = {
                 "x-goog-user-project": ee_project,
                 "Authorization": f"Bearer {self._get_access_token()}",
+                "Username": "test",
             }
 
         elif self.sepal_headers:
@@ -88,7 +91,7 @@ class EESession:
 
     def is_expired(self, expiry_date: int) -> bool:
         """Returns if a token is about to expire"""
-        print("Checking if token is expired")
+        current_time = time.time()
 
         return expiry_date - time.time() < 60
 
@@ -100,6 +103,9 @@ class EESession:
 
         if self.sepal_headers:
 
+            if self.force_refresh:
+                self.sepal_headers = self.get_fresh_sepal_headers()
+
             username = self.sepal_headers["username"]
 
             google_tokens: GoogleTokens = self.sepal_headers["googleTokens"]
@@ -110,19 +116,19 @@ class EESession:
             if not self.is_expired(expiry_date):
                 access_token = google_tokens["accessToken"]
             else:
-                print(
-                    "Expired token... refreshing",
-                )
+                print("Expired token... refreshing")
                 self.sepal_headers = self.get_fresh_sepal_headers()
                 return self.get_headers()
 
             return {
                 "x-goog-user-project": self.project_id,
                 "Authorization": f"Bearer {access_token}",
+                "Username": username,
             }
 
         if self._headers:
             return self._headers
+
         else:
             raise ValueError("Headers are not set.")
 
@@ -139,8 +145,8 @@ class EESession:
         with httpx.Client() as client:
             response = client.get(credentials_file, auth=auth)
             credentials = response.json()
-            print(credentials)
 
+            print("Fresh credentials", credentials)
             return {
                 "id": 1,
                 "username": "dguerrero",
@@ -167,9 +173,9 @@ class EESession:
         """Make a call to the Earth Engine REST API"""
 
         url = self._set_url_project(url)
-        print("url", url)
 
         if self.headers:
+            print("((((((((((((((((((((()))))))))))))))))))))", self.headers)
 
             with httpx.Client(headers=self.headers) as client:  # type: ignore
                 response = client.request(method, url, json=data)
