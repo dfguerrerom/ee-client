@@ -39,3 +39,9 @@ class Credentials(TypedDict):
     client_secret: str
     refresh_token: str
     grant_type: str
+
+
+class GEECredentials(TypedDict):
+    access_token: str
+    access_token_expiry_date: int
+    project_id: str

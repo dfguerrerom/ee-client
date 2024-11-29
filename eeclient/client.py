@@ -8,21 +8,22 @@ import httpx
 import requests
 from requests.auth import HTTPBasicAuth
 from eeclient.exceptions import EERestException
-from eeclient.typing import Credentials, GEEHeaders, GoogleTokens, SepalHeaders
+from eeclient.typing import (
+    Credentials,
+    GEEHeaders,
+    GoogleTokens,
+    SepalHeaders,
+    GEECredentials,
+)
 
 
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
 
 
-def read_credentials(credentials_path: Union[str, Path]) -> Credentials:
-    """Read the credentials from a file"""
-
-    return json.loads(Path(str(credentials_path)).read_text())
-
-
 class EESession:
     def __init__(
         self,
+        sepal_user: Optional[str] = None,
         sepal_headers: Optional[SepalHeaders] = None,
         ee_project: Optional[str] = None,
         credentials_path: Union[Path, str, None] = None,
@@ -39,12 +40,16 @@ class EESession:
             credentials (Union[PathLike, dict]): The credentials to use for the session
 
         """
+        self.credentials__path = credentials_path
+        self.sepal_user = sepal_user
         self._headers: Optional[GEEHeaders] = None
         self.test = test
         self.force_refresh = force_refresh
 
+        self.retry_count = 0
+        self.max_retries = 3
+
         self.project_id = ee_project
-        self.credentials_path = credentials_path
         self.credentials_dict = credentials_dict
 
         self.sepal_headers = sepal_headers
@@ -52,24 +57,32 @@ class EESession:
         if test:
             self._headers = self.get_headers()
 
-        # If initializing from credentials and project, load credentials
+        if self.sepal_user:
+            self.set_user_credentials_path(self.sepal_user)
+
         elif not self.sepal_headers:
             if not ee_project or not credentials_path or not credentials_dict:
                 raise ValueError(
                     "Both ee_project and credentials must be provided when from_headers is False."
                 )
 
-            credentials = credentials_dict or read_credentials(credentials_path)
-            self.credentials = credentials
-
-            self._headers = {
-                "x-goog-user-project": ee_project,
-                "Authorization": f"Bearer {self._get_access_token()}",
-                "Username": "test",
-            }
-
-        elif self.sepal_headers:
+        else:
             self._headers = self.get_headers()
+
+    def set_user_credentials_path(self, sepal_user: str):
+        """Read the credentials from an user"""
+
+        users_path = Path("userHomes")
+        user_path = users_path.joinpath(sepal_user)
+        self.credentials_path = str(
+            user_path.joinpath(".config/earthengine/credentials")
+        )
+
+    @staticmethod
+    def read_credentials(credentials_path: Union[str, Path]) -> GEECredentials:
+        """Read the credentials from a file"""
+
+        return json.loads(Path(str(credentials_path)).read_text())
 
     @property
     def headers(self) -> Optional[GEEHeaders]:
@@ -77,26 +90,23 @@ class EESession:
 
     @headers.setter
     def headers(self, headers: Optional[SepalHeaders]) -> None:
-        print("setting headers")
         self.sepal_headers = headers
         if self.sepal_headers:
             self._headers = self.get_headers()
 
-    def _set_url_project(self, url: str) -> str:
-        """Set the API URL with the project id"""
-
-        return url.format(
-            EARTH_ENGINE_API_URL=EARTH_ENGINE_API_URL, project=self.project_id
-        )
-
     def is_expired(self, expiry_date: int) -> bool:
         """Returns if a token is about to expire"""
-        current_time = time.time()
 
-        return expiry_date - time.time() < 60
+        expired = expiry_date - time.time() < 60
+        self.retry_count += 1 if expired else 0
+
+        return expired
 
     def get_headers(self) -> GEEHeaders:
         """Set the headers from SEPAL"""
+
+        if self.retry_count >= self.max_retries:
+            raise ValueError("Maximum retry attempts reached.")
 
         if self.test and not self.sepal_headers:
             self.headers = self.get_fresh_sepal_headers()
@@ -120,10 +130,24 @@ class EESession:
                 self.sepal_headers = self.get_fresh_sepal_headers()
                 return self.get_headers()
 
+        elif self.sepal_user:
+
+            # We assume this file will be automatically updated by SEPAL
+            credentials = self.read_credentials(self.credentials_path)
+            project_id = credentials["project_id"]
+            access_token = credentials["access_token"]
+            expiry_date = credentials["access_token_expiry_date"]
+
+            if not self.is_expired(expiry_date):
+                access_token = credentials["access_token"]
+            else:
+                print("Expired token... refreshing")
+                return self.get_headers()
+
             return {
-                "x-goog-user-project": self.project_id,
+                "x-goog-user-project": project_id,
                 "Authorization": f"Bearer {access_token}",
-                "Username": username,
+                "Username": self.sepal_user,
             }
 
         if self._headers:
@@ -132,8 +156,25 @@ class EESession:
         else:
             raise ValueError("Headers are not set.")
 
+    def get_credentials_from_env(self) -> GEEHeaders:
+        """Get the headers from the environment variables"""
+
+        sepal_password = os.getenv("SEPAL_PASSWORD", "")
+        sepal_username = os.getenv("SEPAL_USER", "")
+
+        auth = httpx.BasicAuth(username=sepal_username, password=sepal_password)
+
+        credentials_file = f"https://sepal.io/api/user-files/download?path=%2F.config%2Fearthengine%2Fcredentials"
+
+        with httpx.Client() as client:
+            response = client.get(credentials_file, auth=auth)
+            credentials = response.json()
+            return credentials
+
     def get_fresh_sepal_headers(self) -> SepalHeaders:
         """This is temporary until the sepal API is implemented"""
+
+        # THIS METHOD IS JUST FOR TESTING PURPOSES
 
         sepal_password = os.getenv("SEPAL_PASSWORD", "")
         sepal_username = os.getenv("SEPAL_USER", "")
@@ -172,7 +213,7 @@ class EESession:
     ) -> Dict[str, Any]:
         """Make a call to the Earth Engine REST API"""
 
-        url = self._set_url_project(url)
+        url = self.set_url_project(url)
 
         if self.headers:
             print("((((((((((((((((((((()))))))))))))))))))))", self.headers)
@@ -195,19 +236,9 @@ class EESession:
 
         return {}
 
-    def _get_access_token(self) -> str:
-        """Get the access token from the refresh token using the credentials file"""
-        url = "https://oauth2.googleapis.com/token"
+    def set_url_project(self, url: str) -> str:
+        """Set the API URL with the project id"""
 
-        with httpx.Client() as client:
-            response = client.post(
-                url,
-                data={
-                    "client_id": self.credentials["client_id"],
-                    "client_secret": self.credentials["client_secret"],
-                    "refresh_token": self.credentials["refresh_token"],
-                    "grant_type": "refresh_token",
-                },
-            )
-
-        return response.json().get("access_token")
+        return url.format(
+            EARTH_ENGINE_API_URL=EARTH_ENGINE_API_URL, project=self.project_id
+        )
