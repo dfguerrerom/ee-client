@@ -1,7 +1,7 @@
 import time
 from typing import Any, Dict, Literal, Optional
 from urllib.parse import urljoin
-
+import json
 import httpx
 from eeclient.exceptions import EERestException
 from eeclient.typing import (
@@ -49,7 +49,7 @@ class EESession:
         self.sepal_headers = sepal_headers
         self.sepal_cookies = parse_cookie_string(sepal_headers["cookie"][0])
 
-        self.sepal_user = sepal_headers["sepal-user"][0]  # type: ignore
+        self.sepal_user = json.loads(sepal_headers["sepal-user"][0])  # type: ignore
 
         self.sepal_username = self.sepal_user["username"]
         self.project_id = self.sepal_user["googleTokens"]["projectId"]
@@ -90,17 +90,15 @@ class EESession:
 
         if self.tries == 0:
             # This happens with the first request
-            google_tokens: GoogleTokens = self.sepal_headers["sepal-user"][0][  # type: ignore
-                "googleTokens"
-            ]
-            expiry_date = google_tokens["accessTokenExpiryDate"]
+            _google_tokens = self.sepal_user["googleTokens"]
+            expiry_date = _google_tokens["accessTokenExpiryDate"]
 
             if not self.is_expired(expiry_date):
                 self.tries += 1
                 return {
-                    "access_token": google_tokens["accessToken"],
-                    "access_token_expiry_date": google_tokens["accessTokenExpiryDate"],
-                    "project_id": google_tokens["projectId"],
+                    "access_token": _google_tokens["accessToken"],
+                    "access_token_expiry_date": _google_tokens["accessTokenExpiryDate"],
+                    "project_id": _google_tokens["projectId"],
                     "sepal_user": self.sepal_username,
                 }
 
