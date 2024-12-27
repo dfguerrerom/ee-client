@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import time
 from typing import Any, Dict, Literal, Optional
 from urllib.parse import urljoin
@@ -11,10 +13,10 @@ from eeclient.typing import (
     GEECredentials,
 )
 
-
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
-SEPAL_HOST = "https://sepal.io/api/user-files/download"
-CREDENTIALS_FILE_PATH = "%2F.config%2Fearthengine%2Fcredentials"
+SEPAL_HOST = os.getenv("SEPAL_HOST")
+SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
+VERIFY_SSL = not SEPAL_HOST == "danielg.sepal.io"
 
 
 def parse_cookie_string(cookie_string):
@@ -95,6 +97,7 @@ class EESession:
 
             if not self.is_expired(expiry_date):
                 self.tries += 1
+
                 return {
                     "access_token": _google_tokens["accessToken"],
                     "access_token_expiry_date": _google_tokens["accessTokenExpiryDate"],
@@ -102,15 +105,20 @@ class EESession:
                     "sepal_user": self.sepal_username,
                 }
 
-        credentials_url = urljoin(SEPAL_HOST, f"?path={CREDENTIALS_FILE_PATH}")
+        credentials_url = SEPAL_API_DOWNLOAD_URL
 
         sepal_cookies = httpx.Cookies()
         sepal_cookies.set("JSESSIONID", self.sepal_cookies["JSESSIONID"])
         sepal_cookies.set("SEPAL-SESSIONID", self.sepal_cookies["SEPAL-SESSIONID"])
 
-        with httpx.Client(cookies=sepal_cookies) as client:
+        with httpx.Client(cookies=sepal_cookies, verify=VERIFY_SSL) as client:
             response = client.get(credentials_url)
-            credentials = response.json()
+            if response.status_code == 200 and response.content:
+                credentials = response.json()
+            else:
+                raise ValueError(
+                    f"Failed to retrieve credentials, status code: {response.status_code}, content: {response.content}"
+                )
             return credentials
 
     def rest_call(
