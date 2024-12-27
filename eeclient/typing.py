@@ -1,4 +1,5 @@
-from typing import List, TypedDict
+from typing import Dict, List, TypedDict
+from httpx._types import CookieTypes
 
 
 class GoogleTokens(TypedDict):
@@ -12,6 +13,9 @@ class GoogleTokens(TypedDict):
 
 """Google tokens sent from sepal to Solara as headers"""
 
+SepalCookies = Dict[str, str]
+"""Cookies sent from sepal to Solara for a given user"""
+
 
 class SepalHeaders(TypedDict):
     id: int
@@ -21,6 +25,7 @@ class SepalHeaders(TypedDict):
     roles: List[str]
     systemUser: bool
     admin: bool
+    cookies: SepalCookies
 
 
 """Headers sent from sepal to Solara for a given user"""
@@ -45,3 +50,4 @@ class GEECredentials(TypedDict):
     access_token: str
     access_token_expiry_date: int
     project_id: str
+    sepal_user: str
