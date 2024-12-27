@@ -17,6 +17,19 @@ SEPAL_HOST = "https://sepal.io/api/user-files/download"
 CREDENTIALS_FILE_PATH = "%2F.config%2Fearthengine%2Fcredentials"
 
 
+def parse_cookie_string(cookie_string):
+    """
+    Parse a cookie string into a dictionary.
+
+    Args:
+        cookie_string (str): The cookie string to parse.
+
+    Returns:
+        dict: A dictionary with cookie names as keys and cookie values as values.
+    """
+    return dict(pair.split("=", 1) for pair in cookie_string.split("; "))
+
+
 class EESession:
     def __init__(self, sepal_headers: SepalHeaders):
         """Session that handles two scenarios to set the headers for the Earth Engine API
@@ -34,9 +47,12 @@ class EESession:
         self.max_retries = 3
 
         self.sepal_headers = sepal_headers
-        self.sepal_cookies = sepal_headers["cookies"]
-        self.sepal_user = sepal_headers["username"]
-        self.project_id = sepal_headers["googleTokens"]["projectId"]
+        self.sepal_cookies = parse_cookie_string(sepal_headers["cookie"][0])
+
+        self.sepal_user = sepal_headers["sepal-user"][0]  # type: ignore
+
+        self.sepal_username = self.sepal_user["username"]
+        self.project_id = self.sepal_user["googleTokens"]["projectId"]
 
     @property
     def headers(self) -> Optional[GEEHeaders]:
@@ -66,7 +82,7 @@ class EESession:
         return {
             "x-goog-user-project": self.project_id,
             "Authorization": f"Bearer {access_token}",
-            "Username": self.sepal_user,
+            "Username": self.sepal_username,
         }
 
     def get_gee_credentials(self) -> GEECredentials:
@@ -74,7 +90,9 @@ class EESession:
 
         if self.tries == 0:
             # This happens with the first request
-            google_tokens: GoogleTokens = self.sepal_headers["googleTokens"]
+            google_tokens: GoogleTokens = self.sepal_headers["sepal-user"][0][  # type: ignore
+                "googleTokens"
+            ]
             expiry_date = google_tokens["accessTokenExpiryDate"]
 
             if not self.is_expired(expiry_date):
@@ -83,7 +101,7 @@ class EESession:
                     "access_token": google_tokens["accessToken"],
                     "access_token_expiry_date": google_tokens["accessTokenExpiryDate"],
                     "project_id": google_tokens["projectId"],
-                    "sepal_user": self.sepal_user,
+                    "sepal_user": self.sepal_username,
                 }
 
         credentials_url = urljoin(SEPAL_HOST, f"?path={CREDENTIALS_FILE_PATH}")

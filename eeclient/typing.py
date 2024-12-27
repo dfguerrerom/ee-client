@@ -17,7 +17,7 @@ SepalCookies = Dict[str, str]
 """Cookies sent from sepal to Solara for a given user"""
 
 
-class SepalHeaders(TypedDict):
+class SepalUser(TypedDict):
     id: int
     username: str
     googleTokens: GoogleTokens
@@ -26,6 +26,11 @@ class SepalHeaders(TypedDict):
     systemUser: bool
     admin: bool
     cookies: SepalCookies
+
+
+class SepalHeaders(TypedDict):
+    cookie: List[str]
+    sepal_user: List[SepalUser]
 
 
 """Headers sent from sepal to Solara for a given user"""
