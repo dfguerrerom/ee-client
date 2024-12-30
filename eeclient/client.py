@@ -20,16 +20,13 @@ VERIFY_SSL = not SEPAL_HOST == "danielg.sepal.io"
 
 
 def parse_cookie_string(cookie_string):
-    """
-    Parse a cookie string into a dictionary.
-
-    Args:
-        cookie_string (str): The cookie string to parse.
-
-    Returns:
-        dict: A dictionary with cookie names as keys and cookie values as values.
-    """
-    return dict(pair.split("=", 1) for pair in cookie_string.split("; "))
+    cookies = {}
+    for pair in cookie_string.split(";"):
+        key_value = pair.strip().split("=", 1)
+        if len(key_value) == 2:
+            key, value = key_value
+            cookies[key] = value
+    return cookies
 
 
 class EESession:
@@ -38,11 +35,8 @@ class EESession:
 
         It can be initialized with the headers sent by SEPAL or with the credentials and project
 
-        Args:
-            ee_project (str): The project id of the Earth Engine project
-            credentials (Union[PathLike, dict]): The credentials to use for the session
-
         """
+        self.expiry_date = None
         self.tries = 0
 
         self.retry_count = 0
@@ -51,35 +45,30 @@ class EESession:
         self.sepal_headers = sepal_headers
         self.sepal_cookies = parse_cookie_string(sepal_headers["cookie"][0])
 
-        self.sepal_user = json.loads(sepal_headers["sepal-user"][0])  # type: ignore
+        self.sepal_user_data = json.loads(sepal_headers["sepal-user"][0])  # type: ignore
 
-        self.sepal_username = self.sepal_user["username"]
-        self.project_id = self.sepal_user["googleTokens"]["projectId"]
+        self.sepal_username = self.sepal_user_data["username"]
+        self.project_id = self.sepal_user_data["googleTokens"]["projectId"]
 
     @property
     def headers(self) -> Optional[GEEHeaders]:
         return self.get_session_headers()
 
-    def is_expired(self, expiry_date: int) -> bool:
+    def is_expired(self) -> bool:
         """Returns if a token is about to expire"""
 
-        expired = expiry_date - time.time() < 60
+        expired = self.expiry_date - time.time() < 60
         self.retry_count += 1 if expired else 0
+        print("is expired", expired)
 
         return expired
 
     def get_session_headers(self) -> GEEHeaders:
         """Get EE session headers"""
 
-        credentials = self.get_gee_credentials()
+        self.set_gee_credentials()
 
-        access_token = credentials["access_token"]
-        expiry_date = credentials["access_token_expiry_date"]
-
-        if self.is_expired(expiry_date):
-            self.retry_count += 1
-            if self.retry_count < self.max_retries:
-                return self.get_session_headers()
+        access_token = self.credentials["access_token"]
 
         return {
             "x-goog-user-project": self.project_id,
@@ -87,39 +76,47 @@ class EESession:
             "Username": self.sepal_username,
         }
 
-    def get_gee_credentials(self) -> GEECredentials:
+    def set_gee_credentials(self) -> None:
         """Get the credentials from SEPAL session"""
 
         if self.tries == 0:
             # This happens with the first request
-            _google_tokens = self.sepal_user["googleTokens"]
-            expiry_date = _google_tokens["accessTokenExpiryDate"]
+            _google_tokens = self.sepal_user_data["googleTokens"]
+            self.expiry_date = _google_tokens["accessTokenExpiryDate"]
+            self.tries += 1
 
-            if not self.is_expired(expiry_date):
-                self.tries += 1
-
-                return {
+            if not self.is_expired():
+                self.credentials = {
                     "access_token": _google_tokens["accessToken"],
                     "access_token_expiry_date": _google_tokens["accessTokenExpiryDate"],
                     "project_id": _google_tokens["projectId"],
                     "sepal_user": self.sepal_username,
                 }
 
-        credentials_url = SEPAL_API_DOWNLOAD_URL
+        if self.is_expired():
+            print("is expired!!!")
+            if self.retry_count < self.max_retries:
 
-        sepal_cookies = httpx.Cookies()
-        sepal_cookies.set("JSESSIONID", self.sepal_cookies["JSESSIONID"])
-        sepal_cookies.set("SEPAL-SESSIONID", self.sepal_cookies["SEPAL-SESSIONID"])
+                credentials_url = SEPAL_API_DOWNLOAD_URL
 
-        with httpx.Client(cookies=sepal_cookies, verify=VERIFY_SSL) as client:
-            response = client.get(credentials_url)
-            if response.status_code == 200 and response.content:
-                credentials = response.json()
-            else:
-                raise ValueError(
-                    f"Failed to retrieve credentials, status code: {response.status_code}, content: {response.content}"
+                sepal_cookies = httpx.Cookies()
+                sepal_cookies.set(
+                    "SEPAL-SESSIONID", self.sepal_cookies["SEPAL-SESSIONID"]
                 )
-            return credentials
+
+                with httpx.Client(cookies=sepal_cookies, verify=VERIFY_SSL) as client:
+
+                    print(credentials_url)
+                    response = client.get(credentials_url)
+                    if response.status_code == 200 and response:
+                        self.retry_count = 0
+                        self.credentials = response.json()
+                        self.expiry_date = self.credentials["access_token_expiry_date"]
+                    else:
+                        self.retry_count += 1
+                        raise ValueError(
+                            f"Failed to retrieve credentials, status code: {response.status_code}"
+                        )
 
     def rest_call(
         self,
