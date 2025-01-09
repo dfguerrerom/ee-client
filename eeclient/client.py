@@ -1,22 +1,18 @@
 import os
-from pathlib import Path
 import time
 from typing import Any, Dict, Literal, Optional
-from urllib.parse import urljoin
 import json
 import httpx
 from eeclient.exceptions import EERestException
-from eeclient.typing import (
-    GEEHeaders,
-    GoogleTokens,
-    SepalHeaders,
-    GEECredentials,
-)
+from eeclient.typing import GEEHeaders, SepalHeaders
 
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
 SEPAL_HOST = os.getenv("SEPAL_HOST")
 SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
-VERIFY_SSL = not SEPAL_HOST == "danielg.sepal.io"
+VERIFY_SSL = (
+    not SEPAL_HOST == "host.docker.internal" or not SEPAL_HOST == "danielg.sepal.io"
+)
+VERIFY_SSL = False
 
 
 def parse_cookie_string(cookie_string):
@@ -52,12 +48,14 @@ class EESession:
 
     @property
     def headers(self) -> Optional[GEEHeaders]:
+        print("getting headers")
         return self.get_session_headers()
 
     def is_expired(self) -> bool:
         """Returns if a token is about to expire"""
 
-        expired = self.expiry_date - time.time() < 60
+        # The expiration date is in milliseconds
+        expired = self.expiry_date / 1000 - time.time() < 60
         self.retry_count += 1 if expired else 0
         print("is expired", expired)
 
@@ -68,7 +66,7 @@ class EESession:
 
         self.set_gee_credentials()
 
-        access_token = self.credentials["access_token"]
+        access_token = self._credentials["access_token"]
 
         return {
             "x-goog-user-project": self.project_id,
@@ -86,7 +84,7 @@ class EESession:
             self.tries += 1
 
             if not self.is_expired():
-                self.credentials = {
+                self._credentials = {
                     "access_token": _google_tokens["accessToken"],
                     "access_token_expiry_date": _google_tokens["accessTokenExpiryDate"],
                     "project_id": _google_tokens["projectId"],
@@ -110,8 +108,8 @@ class EESession:
                     response = client.get(credentials_url)
                     if response.status_code == 200 and response:
                         self.retry_count = 0
-                        self.credentials = response.json()
-                        self.expiry_date = self.credentials["access_token_expiry_date"]
+                        self._credentials = response.json()
+                        self.expiry_date = self._credentials["access_token_expiry_date"]
                     else:
                         self.retry_count += 1
                         raise ValueError(
@@ -128,25 +126,21 @@ class EESession:
 
         url = self.set_url_project(url)
 
-        if self.headers:
+        with httpx.Client(headers=self.headers) as client:  # type: ignore
+            response = client.request(method, url, json=data)
 
-            with httpx.Client(headers=self.headers) as client:  # type: ignore
-                response = client.request(method, url, json=data)
+        if response.status_code >= 400:
+            if "application/json" in response.headers.get("Content-Type", ""):
+                raise EERestException(response.json().get("error", {}))
+            else:
+                raise EERestException(
+                    {
+                        "code": response.status_code,
+                        "message": response.reason_phrase,
+                    }
+                )
 
-            if response.status_code >= 400:
-                if "application/json" in response.headers.get("Content-Type", ""):
-                    raise EERestException(response.json().get("error", {}))
-                else:
-                    raise EERestException(
-                        {
-                            "code": response.status_code,
-                            "message": response.reason_phrase,
-                        }
-                    )
-
-            return response.json()
-
-        return {}
+        return response.json()
 
     def set_url_project(self, url: str) -> str:
         """Set the API URL with the project id"""
