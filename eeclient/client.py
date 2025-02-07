@@ -5,6 +5,7 @@ import json
 import httpx
 from eeclient.exceptions import EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
+from eeclient.data import get_info, get_map_id, get_asset
 
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
 SEPAL_HOST = os.getenv("SEPAL_HOST")
@@ -144,3 +145,22 @@ class EESession:
         return url.format(
             EARTH_ENGINE_API_URL=EARTH_ENGINE_API_URL, project=self.project_id
         )
+
+    @property
+    def operations(self):
+        # Return an object that bundles operations, passing self as the session.
+        return _Operations(self)
+
+
+class _Operations:
+    def __init__(self, session):
+        self._session = session
+
+    def get_info(self, ee_object, workloadTag=None):
+        return get_info(self._session, ee_object, workloadTag)
+
+    def get_map_id(self, ee_image, vis_params=None, bands=None, format=None):
+        return get_map_id(self._session, ee_image, vis_params, bands, format)
+
+    def get_asset(self, ee_asset_id):
+        return get_asset(self._session, ee_asset_id)

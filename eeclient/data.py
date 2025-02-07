@@ -52,7 +52,7 @@ class MapTileOptions(TypedDict):
     format: str
 
 
-def get_ee_image(
+def _get_ee_image(
     ee_object: Union[Image, ImageCollection, Feature, FeatureCollection],
     vis_params: Union[MapTileOptions, dict] = {},
 ):
@@ -107,7 +107,7 @@ def get_map_id(
             of the functions in ee.data that takes image file formats
     """
 
-    ee_image_request = get_ee_image(ee_image)
+    ee_image_request = _get_ee_image(ee_image)
 
     # renname
     format_ = format
