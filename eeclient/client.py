@@ -7,8 +7,10 @@ from eeclient.exceptions import EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
 from eeclient.data import get_info, get_map_id, get_asset
 
-EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
 SEPAL_HOST = os.getenv("SEPAL_HOST")
+if not SEPAL_HOST:
+    raise ValueError("SEPAL_HOST environment variable not set")
+EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
 SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
 VERIFY_SSL = (
     not SEPAL_HOST == "host.docker.internal" or not SEPAL_HOST == "danielg.sepal.io"

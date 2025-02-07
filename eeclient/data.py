@@ -1,14 +1,16 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from eeclient.client import EESession
+
 from typing import List, Optional, TypedDict, Union
 from ee.ee_exception import EEException
 
-import json
 import ee
 from ee import serializer
 from ee import _cloud_api_utils
 
 from ee.data import TileFetcher
-
-from eeclient.client import EESession
 
 # Types
 Image = ee.image.Image
@@ -88,7 +90,7 @@ def _get_ee_image(
 
 
 def get_map_id(
-    session: EESession,
+    session: "EESession",
     ee_image: Image,
     vis_params: Optional[MapTileOptions] = None,
     bands: Optional[str] = None,
@@ -145,7 +147,7 @@ def get_map_id(
     }
 
 
-def get_info(session: EESession, ee_object: ComputedObject, workloadTag=None):
+def get_info(session: "EESession", ee_object: ComputedObject, workloadTag=None):
     """Get the info of an Earth Engine object"""
 
     data = {
@@ -159,7 +161,7 @@ def get_info(session: EESession, ee_object: ComputedObject, workloadTag=None):
     return session.rest_call("POST", url, data=data)["result"]
 
 
-def get_asset(session: EESession, ee_asset_id: str):
+def get_asset(session: "EESession", ee_asset_id: str):
     """Get the asset info from the asset id"""
 
     url = "{EARTH_ENGINE_API_URL}/projects/{project}/assets/" + ee_asset_id
