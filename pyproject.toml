@@ -38,6 +38,7 @@ dev = [
     "tomli",
     "mypy",
     "pytest",
+    "tenacity",
 ]
 
 [tool.setuptools.packages.find]

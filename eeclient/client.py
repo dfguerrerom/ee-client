@@ -3,6 +3,9 @@ import time
 from typing import Any, Dict, Literal, Optional
 import json
 import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_result
+
+
 from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
@@ -17,7 +20,6 @@ VERIFY_SSL = (
     not SEPAL_HOST == "host.docker.internal" or not SEPAL_HOST == "danielg.sepal.io"
 )
 VERIFY_SSL = False
-timeout = httpx.Timeout(60.0)
 
 
 def parse_cookie_string(cookie_string):
@@ -28,6 +30,13 @@ def parse_cookie_string(cookie_string):
             key, value = key_value
             cookies[key] = value
     return cookies
+
+
+def should_retry(exception: Exception) -> bool:
+    """Check if the exception is due to rate limiting"""
+    if isinstance(exception, EERestException):
+        return exception.code == 429
+    return False
 
 
 class EESession:
@@ -137,28 +146,54 @@ class EESession:
         self,
         method: Literal["GET", "POST"],
         url: str,
-        data: Optional[Dict] = None,  # type: ignore
+        data: Optional[Dict] = None,
+        max_attempts: int = 5,
+        initial_wait: float = 1,
+        max_wait: float = 60,
     ) -> Dict[str, Any]:
-        """Make a call to the Earth Engine REST API"""
+        """Make a call to the Earth Engine REST API with retry logic"""
 
-        url = self.set_url_project(url)
-        logger.debug(f"Making a {method} request to {url}")
+        timeout = httpx.Timeout(connect=60.0, read=300.0, write=60.0, pool=60.0)
 
-        with httpx.Client(headers=self.headers, timeout=timeout) as client:  # type: ignore
-            response = client.request(method, url, json=data)
+        @retry(
+            stop=stop_after_attempt(max_attempts),
+            wait=wait_exponential(multiplier=initial_wait, max=max_wait),
+            retry=retry_if_result(should_retry),
+            before_sleep=lambda retry_state: logger.debug(
+                f"Rate limit exceeded. Attempt {retry_state.attempt_number}/{max_attempts}. "
+                f"Waiting {retry_state.next_action.sleep if retry_state.next_action else 'unknown'} seconds..."
+            ),
+        )
+        def _make_request():
+            try:
+                url_with_project = self.set_url_project(url)
+                logger.debug(f"Making a {method} request to {url_with_project}")
+                logger.debug(f"HEADERS: {self.headers}")
 
-        if response.status_code >= 400:
-            if "application/json" in response.headers.get("Content-Type", ""):
-                raise EERestException(response.json().get("error", {}))
-            else:
-                raise EERestException(
-                    {
-                        "code": response.status_code,
-                        "message": response.reason_phrase,
-                    }
-                )
+                with httpx.Client(headers=self.headers, timeout=timeout) as client:  # type: ignore
+                    response = client.request(method, url_with_project, json=data)
 
-        return response.json()
+                if response.status_code >= 400:
+                    if "application/json" in response.headers.get("Content-Type", ""):
+                        error_data = response.json().get("error", {})
+                        logger.debug(f"Request failed with error: {error_data}")
+                        raise EERestException(error_data)
+                    else:
+                        error_data = {
+                            "code": response.status_code,
+                            "message": response.reason_phrase,
+                        }
+                        logger.debug(f"Request failed with error: {error_data}")
+                        raise EERestException(error_data)
+
+                return response.json()
+            except EERestException as e:
+                return e  # Return the exception for retry evaluation
+
+        result = _make_request()
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     def set_url_project(self, url: str) -> str:
         """Set the API URL with the project id"""
