@@ -3,6 +3,7 @@ import time
 from typing import Any, Dict, Literal, Optional
 import json
 import httpx
+from eeclient.logger import logger
 from eeclient.exceptions import EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
 from eeclient.data import get_info, get_map_id, get_asset
@@ -10,12 +11,13 @@ from eeclient.data import get_info, get_map_id, get_asset
 SEPAL_HOST = os.getenv("SEPAL_HOST")
 if not SEPAL_HOST:
     raise ValueError("SEPAL_HOST environment variable not set")
-EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha/"
+EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha"
 SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
 VERIFY_SSL = (
     not SEPAL_HOST == "host.docker.internal" or not SEPAL_HOST == "danielg.sepal.io"
 )
 VERIFY_SSL = False
+timeout = httpx.Timeout(60.0)
 
 
 def parse_cookie_string(cookie_string):
@@ -124,8 +126,9 @@ class EESession:
         """Make a call to the Earth Engine REST API"""
 
         url = self.set_url_project(url)
+        logger.debug(f"Making a {method} request to {url}")
 
-        with httpx.Client(headers=self.headers) as client:  # type: ignore
+        with httpx.Client(headers=self.headers, timeout=timeout) as client:  # type: ignore
             response = client.request(method, url, json=data)
 
         if response.status_code >= 400:

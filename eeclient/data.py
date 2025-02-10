@@ -12,13 +12,6 @@ from ee import _cloud_api_utils
 
 from ee.data import TileFetcher
 
-# Types
-Image = ee.image.Image
-ImageCollection = ee.imagecollection.ImageCollection
-Feature = ee.feature.Feature
-FeatureCollection = ee.featurecollection.FeatureCollection
-ComputedObject = ee.computedobject.ComputedObject
-
 
 class MapTileOptions(TypedDict):
     """
@@ -55,33 +48,33 @@ class MapTileOptions(TypedDict):
 
 
 def _get_ee_image(
-    ee_object: Union[Image, ImageCollection, Feature, FeatureCollection],
+    ee_object: Union[ee.Image, ee.ImageCollection, ee.Feature, ee.FeatureCollection],
     vis_params: Union[MapTileOptions, dict] = {},
 ):
     """Convert an Earth Engine object to a image request object"""
 
-    def get_image_request(ee_image: Image, vis_params={}):
+    def get_image_request(ee_image: ee.Image, vis_params={}):
 
         vis_image, request = ee_image._apply_visualization(vis_params)
         request["image"] = vis_image
 
         return request
 
-    if isinstance(ee_object, Image):
+    if isinstance(ee_object, ee.Image):
         return get_image_request(ee_object, vis_params)
 
-    elif isinstance(ee_object, ImageCollection):
+    elif isinstance(ee_object, ee.ImageCollection):
 
         ee_image = ee_object.mosaic()
         return get_image_request(ee_image, vis_params)
 
-    elif isinstance(ee_object, Feature):
-        ee_image = FeatureCollection(ee_object).draw(
+    elif isinstance(ee_object, ee.Feature):
+        ee_image = ee.FeatureCollection(ee_object).draw(
             color=(vis_params or {}).get("color", "000000")
         )
         return get_image_request(ee_image)
 
-    elif isinstance(ee_object, FeatureCollection):
+    elif isinstance(ee_object, ee.FeatureCollection):
         ee_image = ee_object.draw(color=(vis_params or {}).get("color", "000000"))
         return get_image_request(ee_image)
 
@@ -91,8 +84,8 @@ def _get_ee_image(
 
 def get_map_id(
     session: "EESession",
-    ee_image: Image,
-    vis_params: Optional[MapTileOptions] = None,
+    ee_image: ee.Image,
+    vis_params: Union[dict, MapTileOptions] = {},
     bands: Optional[str] = None,
     format: Optional[str] = None,
 ):
@@ -109,25 +102,18 @@ def get_map_id(
             of the functions in ee.data that takes image file formats
     """
 
-    ee_image_request = _get_ee_image(ee_image)
+    ee_image_request = _get_ee_image(ee_image, vis_params=vis_params)
 
-    # renname
+    # rename
     format_ = format
 
     url = "{EARTH_ENGINE_API_URL}/projects/{project}/maps"
 
     request_body = {
-        "expression": serializer.encode(ee_image_request, for_cloud_api=True),
+        "expression": serializer.encode(ee_image_request["image"], for_cloud_api=True),
         "fileFormat": _cloud_api_utils.convert_to_image_file_format(format_),
         "bandIds": _cloud_api_utils.convert_to_band_list(bands),
     }
-
-    visualization_options = _cloud_api_utils.convert_to_visualization_options(
-        vis_params  # type: ignore
-    )
-
-    if visualization_options:
-        request_body["visualizationOptions"] = visualization_options
 
     response = session.rest_call("POST", url, data=request_body)
     map_name = response["name"]
@@ -147,7 +133,7 @@ def get_map_id(
     }
 
 
-def get_info(session: "EESession", ee_object: ComputedObject, workloadTag=None):
+def get_info(session: "EESession", ee_object: ee.ComputedObject, workloadTag=None):
     """Get the info of an Earth Engine object"""
 
     data = {
