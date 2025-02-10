@@ -23,7 +23,7 @@ To install the package, simply use pip:
 
 .. code-block:: bash
 
-   pip install ee-client  # (Package not yet developed)
+   pip install ee-client
 
 Usage
 -----
