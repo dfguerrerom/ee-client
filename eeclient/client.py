@@ -4,7 +4,7 @@ from typing import Any, Dict, Literal, Optional
 import json
 import httpx
 from eeclient.logger import logger
-from eeclient.exceptions import EERestException
+from eeclient.exceptions import EEClientError, EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
 from eeclient.data import get_info, get_map_id, get_asset
 
@@ -37,8 +37,7 @@ class EESession:
         It can be initialized with the headers sent by SEPAL or with the credentials and project
 
         """
-        self.expiry_date = None
-        self.tries = 0
+        self.expiry_date = 0
 
         self.retry_count = 0
         self.max_retries = 3
@@ -49,6 +48,12 @@ class EESession:
         self.sepal_user_data = json.loads(sepal_headers["sepal-user"][0])  # type: ignore
 
         self.sepal_username = self.sepal_user_data["username"]
+
+        if not self.sepal_user_data["googleTokens"]:
+            raise EEClientError(
+                "Authentication required: Please authenticate via sepal."
+            )
+
         self.project_id = self.sepal_user_data["googleTokens"]["projectId"]
 
     @property
@@ -80,42 +85,53 @@ class EESession:
     def set_gee_credentials(self) -> None:
         """Get the credentials from SEPAL session"""
 
-        if self.tries == 0:
-            # This happens with the first request
-            _google_tokens = self.sepal_user_data["googleTokens"]
+        if not hasattr(self, "_credentials"):
+            _google_tokens = self.sepal_user_data.get("googleTokens")
+            if not _google_tokens:
+                raise EEClientError(
+                    "Authentication required: Please authenticate via sepal."
+                )
             self.expiry_date = _google_tokens["accessTokenExpiryDate"]
-            self.tries += 1
-
-            if not self.is_expired():
-                self._credentials = {
-                    "access_token": _google_tokens["accessToken"],
-                    "access_token_expiry_date": _google_tokens["accessTokenExpiryDate"],
-                    "project_id": _google_tokens["projectId"],
-                    "sepal_user": self.sepal_username,
-                }
+            self._credentials = {
+                "access_token": _google_tokens["accessToken"],
+                "access_token_expiry_date": _google_tokens["accessTokenExpiryDate"],
+                "project_id": _google_tokens["projectId"],
+                "sepal_user": self.sepal_username,
+            }
 
         if self.is_expired():
-            if self.retry_count < self.max_retries:
+            logger.debug(
+                "Token is expired or about to expire; attempting to refresh credentials."
+            )
+            self.retry_count = 0
+            credentials_url = SEPAL_API_DOWNLOAD_URL
 
-                credentials_url = SEPAL_API_DOWNLOAD_URL
+            sepal_cookies = httpx.Cookies()
+            sepal_cookies.set("SEPAL-SESSIONID", self.sepal_cookies["SEPAL-SESSIONID"])
 
-                sepal_cookies = httpx.Cookies()
-                sepal_cookies.set(
-                    "SEPAL-SESSIONID", self.sepal_cookies["SEPAL-SESSIONID"]
-                )
+            last_status = None
 
+            while self.retry_count < self.max_retries:
                 with httpx.Client(cookies=sepal_cookies, verify=VERIFY_SSL) as client:
-
                     response = client.get(credentials_url)
-                    if response.status_code == 200 and response:
-                        self.retry_count = 0
-                        self._credentials = response.json()
-                        self.expiry_date = self._credentials["access_token_expiry_date"]
-                    else:
-                        self.retry_count += 1
-                        raise ValueError(
-                            f"Failed to retrieve credentials, status code: {response.status_code}"
-                        )
+                last_status = response.status_code
+
+                if response.status_code == 200:
+                    self._credentials = response.json()
+                    self.expiry_date = self._credentials["access_token_expiry_date"]
+                    logger.debug("Successfully refreshed credentials.")
+                    break
+                else:
+                    self.retry_count += 1
+                    logger.debug(
+                        f"Retry {self.retry_count}/{self.max_retries} failed "
+                        f"with status code: {response.status_code}."
+                    )
+            else:
+                raise ValueError(
+                    f"Failed to retrieve credentials after {self.max_retries} retries, "
+                    f"last status code: {last_status}"
+                )
 
     def rest_call(
         self,
@@ -164,7 +180,7 @@ class _Operations:
     def get_info(self, ee_object, workloadTag=None):
         return get_info(self._session, ee_object, workloadTag)
 
-    def get_map_id(self, ee_image, vis_params=None, bands=None, format=None):
+    def get_map_id(self, ee_image, vis_params={}, bands=None, format=None):
         return get_map_id(self._session, ee_image, vis_params, bands, format)
 
     def get_asset(self, ee_asset_id):

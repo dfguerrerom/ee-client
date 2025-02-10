@@ -8,3 +8,9 @@ class EERestException(EEException):
         self.code = error.get("code", -1)
         self.status = error.get("status", "UNDEFINED")
         self.details = error.get("details")
+
+
+class EEClientError(Exception):
+    """Custom exception class for EEClient errors."""
+
+    pass
