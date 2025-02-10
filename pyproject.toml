@@ -13,7 +13,8 @@ authors = [
 dependencies = [
 	"earthengine-api",
     "httpx",
-    "aiogoogle"
+    "aiogoogle",
+    "tenacity",
 ]
 
 classifiers = [
@@ -38,7 +39,6 @@ dev = [
     "tomli",
     "mypy",
     "pytest",
-    "tenacity",
 ]
 
 [tool.setuptools.packages.find]
