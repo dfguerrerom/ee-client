@@ -60,7 +60,7 @@ class EESession:
 
         if not self.sepal_user_data["googleTokens"]:
             raise EEClientError(
-                "Authentication required: Please authenticate via sepal."
+                "Authentication required: Please authenticate via sepal. See https://docs.sepal.io/en/latest/setup/gee.html."
             )
 
         self.project_id = self.sepal_user_data["googleTokens"]["projectId"]
