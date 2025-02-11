@@ -39,6 +39,7 @@ dev = [
     "tomli",
     "mypy",
     "pytest",
+    "flask",
 ]
 
 [tool.setuptools.packages.find]
