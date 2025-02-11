@@ -10,6 +10,12 @@ import ee
 from ee import serializer
 from ee import _cloud_api_utils
 
+from ee.image import Image
+from ee.imagecollection import ImageCollection
+from ee.feature import Feature
+from ee.featurecollection import FeatureCollection
+from ee.computedobject import ComputedObject
+
 from ee.data import TileFetcher
 
 
@@ -48,33 +54,33 @@ class MapTileOptions(TypedDict):
 
 
 def _get_ee_image(
-    ee_object: Union[ee.Image, ee.ImageCollection, ee.Feature, ee.FeatureCollection],
+    ee_object: Union[Image, ImageCollection, Feature, FeatureCollection],
     vis_params: Union[MapTileOptions, dict] = {},
 ):
     """Convert an Earth Engine object to a image request object"""
 
-    def get_image_request(ee_image: ee.Image, vis_params={}):
+    def get_image_request(ee_image: Image, vis_params={}):
 
         vis_image, request = ee_image._apply_visualization(vis_params)
         request["image"] = vis_image
 
         return request
 
-    if isinstance(ee_object, ee.Image):
+    if isinstance(ee_object, Image):
         return get_image_request(ee_object, vis_params)
 
-    elif isinstance(ee_object, ee.ImageCollection):
+    elif isinstance(ee_object, ImageCollection):
 
         ee_image = ee_object.mosaic()
         return get_image_request(ee_image, vis_params)
 
-    elif isinstance(ee_object, ee.Feature):
-        ee_image = ee.FeatureCollection(ee_object).draw(
+    elif isinstance(ee_object, Feature):
+        ee_image = FeatureCollection(ee_object).draw(
             color=(vis_params or {}).get("color", "000000")
         )
         return get_image_request(ee_image)
 
-    elif isinstance(ee_object, ee.FeatureCollection):
+    elif isinstance(ee_object, FeatureCollection):
         ee_image = ee_object.draw(color=(vis_params or {}).get("color", "000000"))
         return get_image_request(ee_image)
 
@@ -84,7 +90,7 @@ def _get_ee_image(
 
 def get_map_id(
     session: "EESession",
-    ee_image: ee.Image,
+    ee_image: Image,
     vis_params: Union[dict, MapTileOptions] = {},
     bands: Optional[str] = None,
     format: Optional[str] = None,
@@ -133,11 +139,19 @@ def get_map_id(
     }
 
 
-def get_info(session: "EESession", ee_object: ee.ComputedObject, workloadTag=None):
+def get_info(
+    session: "EESession",
+    ee_object: Union[ComputedObject, None] = None,
+    workloadTag=None,
+    serialized_object=None,
+):
     """Get the info of an Earth Engine object"""
 
+    if not ee_object and not serialized_object:
+        raise ValueError("Either ee_object or serialized_object must be provided")
+
     data = {
-        "expression": serializer.encode(ee_object),
+        "expression": serialized_object or serializer.encode(ee_object),
         "workloadTag": workloadTag,
     }
     # request_body = json.dumps(data)

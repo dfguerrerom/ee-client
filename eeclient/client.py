@@ -212,8 +212,13 @@ class _Operations:
     def __init__(self, session):
         self._session = session
 
-    def get_info(self, ee_object, workloadTag=None):
-        return get_info(self._session, ee_object, workloadTag)
+    def get_info(self, ee_object=None, workloadTag=None, serialized_object=None):
+        return get_info(
+            self._session,
+            ee_object,
+            workloadTag,
+            serialized_object,
+        )
 
     def get_map_id(self, ee_image, vis_params={}, bands=None, format=None):
         return get_map_id(self._session, ee_image, vis_params, bands, format)
