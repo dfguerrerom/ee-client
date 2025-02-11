@@ -1,16 +1,17 @@
+import json
 from typing import Literal
 import httpx
 from eeclient.exceptions import EERestException
+import os
 
 
 class Session:
-    def __init__(self, credentials, ee_project):
+    def __init__(self):
 
-        self.credentials = credentials
-        self.project = ee_project
+        self.credentials = json.loads(os.getenv("EARTHENGINE_TOKEN"))
 
         self.headers = {
-            "x-goog-user-project": ee_project,
+            "x-goog-user-project": self.credentials["project_id"],
             "Authorization": f"Bearer {self._get_access_token()}",
         }
 
@@ -64,4 +65,5 @@ class Session:
                 },
             )
 
+        print(response.json().get("access_token"))
         return response.json().get("access_token")
