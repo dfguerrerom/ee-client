@@ -1,10 +1,11 @@
 from typing import TYPE_CHECKING
 
+from eeclient.typing import MapTileOptions
+
 if TYPE_CHECKING:
     from eeclient.client import EESession
 
-from typing import List, Optional, TypedDict, Union
-from ee.ee_exception import EEException
+from typing import Optional, Union
 
 import ee
 from ee import serializer
@@ -17,40 +18,6 @@ from ee.featurecollection import FeatureCollection
 from ee.computedobject import ComputedObject
 
 from ee.data import TileFetcher
-
-
-class MapTileOptions(TypedDict):
-    """
-    MapTileOptions defines the configuration for map tile generation.
-
-    Keys:
-        min (str or List[str]): Comma-separated numbers representing the values
-            to map onto 00. It can be a string of comma-separated numbers
-            (e.g., "1,2,3") or a list of strings. (e.g., ["1", "2", "3"]).
-        max (str or List[str]): Comma-separated numbers representing the values
-            to map onto FF. It can be a string of comma-separated numbers or
-            a list of strings.
-        gain (str or List[str]): Comma-separated numbers representing the gain
-            to map onto 00-FF. It can be a string of comma-separated numbers or
-            a list of strings.
-        bias (str or List[str]): Comma-separated numbers representing the
-            offset to map onto 00-FF. It can be a string of comma-separated
-            numbers or a list of strings.
-        gamma (str or List[str]): Comma-separated numbers representing the
-            gamma correction factor. It can be a string of comma-separated
-            numbers or a list of strings.
-        palette (str): A string of comma-separated CSS-style color strings
-            (single-band previews only).For example, 'FF0000,000000'.
-        format (str): The desired map tile format.
-    """
-
-    min: Union[str, List[str]]
-    max: Union[str, List[str]]
-    gain: Union[str, List[str]]
-    bias: Union[str, List[str]]
-    gamma: Union[str, List[str]]
-    palette: str
-    format: str
 
 
 def _get_ee_image(
@@ -167,15 +134,6 @@ def get_asset(session: "EESession", ee_asset_id: str):
     url = "{EARTH_ENGINE_API_URL}/projects/{project}/assets/" + ee_asset_id
 
     return session.rest_call("GET", url)
-
-
-class EERestException(EEException):
-    def __init__(self, error):
-        self.message = error.get("message", "EE responded with an error")
-        super().__init__(self.message)
-        self.code = error.get("code", -1)
-        self.status = error.get("status", "UNDEFINED")
-        self.details = error.get("details")
 
 
 getInfo = get_info
