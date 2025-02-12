@@ -1,18 +1,18 @@
-import asyncio
-from contextlib import asynccontextmanager
-from functools import wraps
+from typing import Any, Dict, Literal, Optional
+
 import os
 import time
-from typing import Any, Dict, Literal, Optional
 import json
+import asyncio
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_result
+from contextlib import asynccontextmanager
+from functools import wraps
 
 
 from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
-from eeclient.data import get_info, get_map_id, get_asset
+from eeclient.data import get_assets_async
 
 SEPAL_HOST = os.getenv("SEPAL_HOST")
 if not SEPAL_HOST:
@@ -22,7 +22,6 @@ SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2
 VERIFY_SSL = (
     not SEPAL_HOST == "host.docker.internal" or not SEPAL_HOST == "danielg.sepal.io"
 )
-VERIFY_SSL = False
 
 
 def parse_cookie_string(cookie_string):
@@ -96,9 +95,7 @@ class AsyncEESession:
 
     def is_expired(self) -> bool:
         """Returns if a token is about to expire"""
-        expired = self.expiry_date / 1000 - time.time() < 60
-        self.retry_count += 1 if expired else 0
-        return expired
+        return (self.expiry_date / 1000) - time.time() < 60
 
     def get_current_headers(self) -> GEEHeaders:
         """Get current headers without refreshing credentials"""
@@ -107,9 +104,9 @@ class AsyncEESession:
 
         access_token = self._credentials["access_token"]
         return {
-            "x-goog-user-project": self.project_id,
+            "x-goog-user-project": str(self.project_id),
             "Authorization": f"Bearer {access_token}",
-            "Username": self.sepal_username,
+            "Username": str(self.sepal_username),
         }
 
     async def get_headers(self) -> GEEHeaders:
@@ -120,60 +117,66 @@ class AsyncEESession:
 
     @asynccontextmanager
     async def get_client(self):
-        """Context manager for async client with proper session handling"""
-        if self._async_client is None:
-            timeout = httpx.Timeout(connect=60.0, read=300.0, write=60.0, pool=60.0)
-            headers = await self.get_headers()
-            self._async_client = httpx.AsyncClient(
-                headers=headers, timeout=timeout, verify=VERIFY_SSL
-            )
+        """Context manager for an HTTP client using the current headers.
+        A new client is created each time to ensure fresh headers."""
+
+        timeout = httpx.Timeout(connect=60.0, read=300.0, write=60.0, pool=60.0)
+        headers = await self.get_headers()
+        async_client = httpx.AsyncClient(headers=headers, timeout=timeout)  # type: ignore
         try:
-            yield self._async_client
+            yield async_client
         finally:
-            if self._async_client is not None:
-                await self._async_client.aclose()
-                self._async_client = None
+            await async_client.aclose()
 
     async def set_credentials(self) -> None:
-        """Async credential refresh"""
+        """
+        Refresh credentials asynchronously.
+        Uses its own HTTP client (thus bypassing get_headers) to avoid recursion.
+        """
         logger.debug(
             "Token is expired or about to expire; attempting to refresh credentials."
         )
-        self.retry_count = 0
+        attempt = 0
         credentials_url = SEPAL_API_DOWNLOAD_URL
 
+        # Prepare cookies for authentication.
         sepal_cookies = httpx.Cookies()
-        sepal_cookies.set("SEPAL-SESSIONID", self.sepal_cookies["SEPAL-SESSIONID"])
+        sepal_cookies.set(
+            "SEPAL-SESSIONID", self.sepal_cookies.get("SEPAL-SESSIONID", "")
+        )
 
         last_status = None
 
-        while self.retry_count < self.max_retries:
-            async with self.get_client() as client:
-                # Update client headers with cookie
-                client.cookies.update(sepal_cookies)
-                response = await client.get(credentials_url)
+        while attempt < self.max_retries:
+            attempt += 1
+            try:
+                async with httpx.AsyncClient(
+                    cookies=sepal_cookies,
+                    verify=VERIFY_SSL,
+                ) as client:
+                    logger.debug(f"Attempt {attempt} to refresh credentials.")
+                    response = await client.get(credentials_url)
 
-            last_status = response.status_code
+                last_status = response.status_code
 
-            if response.status_code == 200:
-                self._credentials = response.json()
-                self.expiry_date = self._credentials["access_token_expiry_date"]
-                # Update client headers with new credentials
-                if self._async_client:
-                    self._async_client.headers.update(self.get_current_headers())
-                logger.debug("Successfully refreshed credentials.")
-                break
-            else:
-                self.retry_count += 1
-                logger.debug(
-                    f"Retry {self.retry_count}/{self.max_retries} failed "
-                    f"with status code: {response.status_code}."
+                if response.status_code == 200:
+                    self._credentials = response.json()
+                    self.expiry_date = self._credentials["access_token_expiry_date"]
+                    logger.debug("Successfully refreshed credentials.")
+                    return
+                else:
+                    logger.debug(
+                        f"Attempt {attempt}/{self.max_retries} failed with status code: {response.status_code}."
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Attempt {attempt}/{self.max_retries} encountered an exception: {e}"
                 )
-        else:
-            raise ValueError(
-                f"Failed to retrieve credentials after {self.max_retries} retries, "
-                f"last status code: {last_status}"
-            )
+            await asyncio.sleep(2**attempt)  # Exponential backoff
+
+        raise ValueError(
+            f"Failed to retrieve credentials after {self.max_retries} attempts, last status code: {last_status}"
+        )
 
     async def rest_call(
         self,
@@ -234,6 +237,13 @@ class AsyncEESession:
 
         raise EERestException({"code": 429, "message": "Max retry attempts reached"})
 
+    def set_url_project(self, url: str) -> str:
+        """Set the API URL with the project id"""
+
+        return url.format(
+            EARTH_ENGINE_API_URL=EARTH_ENGINE_API_URL, project=self.project_id
+        )
+
     @property
     def operations(self):
         # Return an object that bundles operations, passing self as the session.
@@ -244,18 +254,8 @@ class _Operations:
     def __init__(self, session):
         self._session = session
 
-    async def get_assets(
-        self, parent: str = "projects/earthengine-public/assets"
-    ) -> Dict:
-        """Async - List assets in a folder/collection"""
-        url = f"{{EARTH_ENGINE_API_URL}}/{parent}:listAssets"
-        return await self._session.rest_call("GET", url)
-
-    async def get_asset(self, asset_id: str) -> Dict:
-        """Async - Get asset metadata"""
-        url = f"{{EARTH_ENGINE_API_URL}}/projects/{{project}}/assets/{asset_id}"
-        return await self._session.rest_call("GET", url)
-
-    # Sync wrappers
-    get_assets_sync = sync_wrapper(get_assets)
-    get_asset_sync = sync_wrapper(get_asset)
+    async def get_assets_async(self, folder: str):
+        return get_assets_async(
+            self._session,
+            folder=folder,
+        )

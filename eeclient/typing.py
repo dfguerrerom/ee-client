@@ -1,5 +1,5 @@
 from typing import Dict, List, TypedDict
-from httpx._types import CookieTypes
+from httpx._types import CookieTypes, HeaderTypes
 from typing import Union
 
 
@@ -71,10 +71,13 @@ class SepalHeaders(TypedDict):
 
 
 GEEHeaders = TypedDict(
-    "GEEHeaders", {"x-goog-user-project": str, "Authorization": str, "Username": str}
+    "GEEHeaders",
+    {
+        "x-goog-user-project": str,
+        "Authorization": str,
+        "Username": str,
+    },
 )
-
-
 """This will be the headers used for each request to the GEE API"""
 
 
