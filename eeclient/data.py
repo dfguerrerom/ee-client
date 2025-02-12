@@ -1,13 +1,15 @@
-from typing import TYPE_CHECKING
+import asyncio
+from typing import TYPE_CHECKING, List
 
 from eeclient.typing import MapTileOptions
 
 if TYPE_CHECKING:
     from eeclient.client import EESession
+    from eeclient.async_client import AsyncEESession
+
 
 from typing import Optional, Union
 
-import ee
 from ee import serializer
 from ee import _cloud_api_utils
 
@@ -134,6 +136,45 @@ def get_asset(session: "EESession", ee_asset_id: str):
     url = "{EARTH_ENGINE_API_URL}/projects/{project}/assets/" + ee_asset_id
 
     return session.rest_call("GET", url)
+
+
+async def list_assets_concurrently(async_client: "AsyncEESession", folders):
+    """List assets concurrently"""
+
+    urls = [
+        f"https://earthengine.googleapis.com/v1alpha/{folder}/:listAssets"
+        for folder in folders
+    ]
+
+    tasks = (async_client.rest_call("GET", url) for url in urls)
+    responses = await asyncio.gather(*tasks)
+    return [response["assets"] for response in responses if response.get("assets")]
+
+
+async def get_assets_async(
+    async_client: "AsyncEESession", folder: str = ""
+) -> List[dict]:
+    """Get all assets in a folder"""
+
+    folder_queue = asyncio.Queue()
+    await folder_queue.put(folder)
+    asset_list = []
+
+    while not folder_queue.empty():
+        current_folders = [
+            await folder_queue.get() for _ in range(folder_queue.qsize())
+        ]
+        assets_groups = await list_assets_concurrently(async_client, current_folders)
+
+        for assets in assets_groups:
+            for asset in assets:
+                asset_list.append(
+                    {"type": asset["type"], "name": asset["name"], "id": asset["id"]}
+                )
+                if asset["type"] == "FOLDER":
+                    await folder_queue.put(asset["name"])
+
+    return asset_list
 
 
 getInfo = get_info
