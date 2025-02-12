@@ -12,7 +12,7 @@ from functools import wraps
 from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
-from eeclient.data import get_assets_async
+from eeclient.async_data import get_asset, get_assets_async, get_info, get_map_id
 
 SEPAL_HOST = os.getenv("SEPAL_HOST")
 if not SEPAL_HOST:
@@ -259,3 +259,21 @@ class _Operations:
             self._session,
             folder=folder,
         )
+
+    def get_info(self, ee_object=None, workloadTag=None, serialized_object=None):
+        return asyncio.run(
+            get_info(
+                self._session,
+                ee_object,
+                workloadTag,
+                serialized_object,
+            )
+        )
+
+    def get_map_id(self, ee_image, vis_params={}, bands=None, format=None):
+        return asyncio.run(
+            get_map_id(self._session, ee_image, vis_params, bands, format)
+        )
+
+    def get_asset(self, ee_asset_id):
+        return asyncio.run(get_asset(self._session, ee_asset_id))
