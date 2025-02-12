@@ -1,5 +1,5 @@
 import pytest
-from eeclient.client import EESession
+from eeclient.async_client import EESession
 from eeclient.data import getInfo
 import ee
 

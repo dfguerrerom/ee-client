@@ -1,5 +1,40 @@
 from typing import Dict, List, TypedDict
-from httpx._types import CookieTypes
+from httpx._types import CookieTypes, HeaderTypes
+from typing import Union
+
+
+class MapTileOptions(TypedDict):
+    """
+    MapTileOptions defines the configuration for map tile generation.
+
+    Keys:
+        min (str or List[str]): Comma-separated numbers representing the values
+            to map onto 00. It can be a string of comma-separated numbers
+            (e.g., "1,2,3") or a list of strings. (e.g., ["1", "2", "3"]).
+        max (str or List[str]): Comma-separated numbers representing the values
+            to map onto FF. It can be a string of comma-separated numbers or
+            a list of strings.
+        gain (str or List[str]): Comma-separated numbers representing the gain
+            to map onto 00-FF. It can be a string of comma-separated numbers or
+            a list of strings.
+        bias (str or List[str]): Comma-separated numbers representing the
+            offset to map onto 00-FF. It can be a string of comma-separated
+            numbers or a list of strings.
+        gamma (str or List[str]): Comma-separated numbers representing the
+            gamma correction factor. It can be a string of comma-separated
+            numbers or a list of strings.
+        palette (str): A string of comma-separated CSS-style color strings
+            (single-band previews only).For example, 'FF0000,000000'.
+        format (str): The desired map tile format.
+    """
+
+    min: Union[str, List[str]]
+    max: Union[str, List[str]]
+    gain: Union[str, List[str]]
+    bias: Union[str, List[str]]
+    gamma: Union[str, List[str]]
+    palette: str
+    format: str
 
 
 class GoogleTokens(TypedDict):
@@ -36,10 +71,13 @@ class SepalHeaders(TypedDict):
 
 
 GEEHeaders = TypedDict(
-    "GEEHeaders", {"x-goog-user-project": str, "Authorization": str, "Username": str}
+    "GEEHeaders",
+    {
+        "x-goog-user-project": str,
+        "Authorization": str,
+        "Username": str,
+    },
 )
-
-
 """This will be the headers used for each request to the GEE API"""
 
 

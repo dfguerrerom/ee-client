@@ -1,12 +1,15 @@
-from typing import TYPE_CHECKING
+import asyncio
+from typing import TYPE_CHECKING, List
+
+from eeclient.typing import MapTileOptions
 
 if TYPE_CHECKING:
     from eeclient.client import EESession
+    from eeclient.async_client import AsyncEESession
 
-from typing import List, Optional, TypedDict, Union
-from ee.ee_exception import EEException
 
-import ee
+from typing import Optional, Union
+
 from ee import serializer
 from ee import _cloud_api_utils
 
@@ -17,40 +20,6 @@ from ee.featurecollection import FeatureCollection
 from ee.computedobject import ComputedObject
 
 from ee.data import TileFetcher
-
-
-class MapTileOptions(TypedDict):
-    """
-    MapTileOptions defines the configuration for map tile generation.
-
-    Keys:
-        min (str or List[str]): Comma-separated numbers representing the values
-            to map onto 00. It can be a string of comma-separated numbers
-            (e.g., "1,2,3") or a list of strings. (e.g., ["1", "2", "3"]).
-        max (str or List[str]): Comma-separated numbers representing the values
-            to map onto FF. It can be a string of comma-separated numbers or
-            a list of strings.
-        gain (str or List[str]): Comma-separated numbers representing the gain
-            to map onto 00-FF. It can be a string of comma-separated numbers or
-            a list of strings.
-        bias (str or List[str]): Comma-separated numbers representing the
-            offset to map onto 00-FF. It can be a string of comma-separated
-            numbers or a list of strings.
-        gamma (str or List[str]): Comma-separated numbers representing the
-            gamma correction factor. It can be a string of comma-separated
-            numbers or a list of strings.
-        palette (str): A string of comma-separated CSS-style color strings
-            (single-band previews only).For example, 'FF0000,000000'.
-        format (str): The desired map tile format.
-    """
-
-    min: Union[str, List[str]]
-    max: Union[str, List[str]]
-    gain: Union[str, List[str]]
-    bias: Union[str, List[str]]
-    gamma: Union[str, List[str]]
-    palette: str
-    format: str
 
 
 def _get_ee_image(
@@ -169,13 +138,43 @@ def get_asset(session: "EESession", ee_asset_id: str):
     return session.rest_call("GET", url)
 
 
-class EERestException(EEException):
-    def __init__(self, error):
-        self.message = error.get("message", "EE responded with an error")
-        super().__init__(self.message)
-        self.code = error.get("code", -1)
-        self.status = error.get("status", "UNDEFINED")
-        self.details = error.get("details")
+async def list_assets_concurrently(async_client: "AsyncEESession", folders):
+    """List assets concurrently"""
+
+    urls = [
+        f"https://earthengine.googleapis.com/v1alpha/{folder}/:listAssets"
+        for folder in folders
+    ]
+
+    tasks = (async_client.rest_call("GET", url) for url in urls)
+    responses = await asyncio.gather(*tasks)
+    return [response["assets"] for response in responses if response.get("assets")]
+
+
+async def get_assets_async(
+    async_client: "AsyncEESession", folder: str = ""
+) -> List[dict]:
+    """Get all assets in a folder"""
+
+    folder_queue = asyncio.Queue()
+    await folder_queue.put(folder)
+    asset_list = []
+
+    while not folder_queue.empty():
+        current_folders = [
+            await folder_queue.get() for _ in range(folder_queue.qsize())
+        ]
+        assets_groups = await list_assets_concurrently(async_client, current_folders)
+
+        for assets in assets_groups:
+            for asset in assets:
+                asset_list.append(
+                    {"type": asset["type"], "name": asset["name"], "id": asset["id"]}
+                )
+                if asset["type"] == "FOLDER":
+                    await folder_queue.put(asset["name"])
+
+    return asset_list
 
 
 getInfo = get_info
