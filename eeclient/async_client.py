@@ -22,6 +22,7 @@ SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2
 VERIFY_SSL = (
     not SEPAL_HOST == "host.docker.internal" or not SEPAL_HOST == "danielg.sepal.io"
 )
+# VERIFY_SSL = False
 
 
 def parse_cookie_string(cookie_string):
@@ -255,7 +256,7 @@ class _Operations:
         self._session = session
 
     async def get_assets_async(self, folder: str):
-        return get_assets_async(
+        return await get_assets_async(
             self._session,
             folder=folder,
         )
