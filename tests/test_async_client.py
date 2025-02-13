@@ -14,6 +14,12 @@ async def test_get_assets_async():
     )
 
 
+async def test_get_assets_from_session():
+    return await async_session.operations.get_assets_async(
+        folder=f"projects/{async_session.project_id}/assets/"
+    )
+
+
 if __name__ == "__main__":
     start_time = time.time()
     results = asyncio.run(test_get_assets_async())
@@ -21,3 +27,7 @@ if __name__ == "__main__":
     duration = end_time - start_time
     print(results)
     print(f"Time taken: {duration} seconds")
+
+    start_time = time.time()
+    results = asyncio.run(test_get_assets_from_session())
+    end_time = time.time()
