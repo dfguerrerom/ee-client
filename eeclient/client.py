@@ -47,15 +47,12 @@ class EESession:
 
         """
         self.expiry_date = 0
-
         self.retry_count = 0
         self.max_retries = 3
 
         self.sepal_headers = sepal_headers
         self.sepal_cookies = parse_cookie_string(sepal_headers["cookie"][0])
-
         self.sepal_user_data = json.loads(sepal_headers["sepal-user"][0])  # type: ignore
-
         self.sepal_username = self.sepal_user_data["username"]
 
         if not self.sepal_user_data["googleTokens"]:
