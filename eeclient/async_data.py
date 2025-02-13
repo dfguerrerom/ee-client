@@ -115,7 +115,7 @@ async def get_asset(async_client: "AsyncEESession", ee_asset_id: str):
     Returns:
         The asset info as returned by the API.
     """
-    url = "{EARTH_ENGINE_API_URL}/projects/{project}/assets/" + ee_asset_id
+    url = "{EARTH_ENGINE_API_URL}/" + ee_asset_id
     return await async_client.rest_call("GET", url)
 
 
