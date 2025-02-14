@@ -19,10 +19,9 @@ if not SEPAL_HOST:
     raise ValueError("SEPAL_HOST environment variable not set")
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha"
 SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
-VERIFY_SSL = (
-    not SEPAL_HOST == "host.docker.internal" or not SEPAL_HOST == "danielg.sepal.io"
+VERIFY_SSL = not (
+    SEPAL_HOST == "host.docker.internal" or SEPAL_HOST == "danielg.sepal.io"
 )
-# VERIFY_SSL = False
 
 
 def parse_cookie_string(cookie_string):
