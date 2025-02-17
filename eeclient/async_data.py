@@ -1,6 +1,8 @@
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
+from eeclient.logger import logger
 from eeclient.typing import MapTileOptions
 from eeclient.helpers import _get_ee_image
 
@@ -170,3 +172,47 @@ async def get_assets_async(
                     await folder_queue.put(asset["name"])
 
     return asset_list
+
+
+async def create_folder(
+    async_client: "AsyncEESession", folder: Union[Path, str]
+) -> Path:
+    """Create a folder and its parents in Earth Engine if they don't exist.
+
+    Args:
+        async_client: The asynchronous session object.
+        folder: The folder path (e.g. 'parent/child/grandchild').
+
+    Raises:
+        ValueError: If the folder path is empty or invalid.
+    """
+    folder = str(folder)
+
+    if not folder or not folder.strip("/"):
+        raise ValueError("Folder path cannot be empty")
+
+    # Clean and split the path
+    folder = folder.strip("/")
+    folders_to_create = []
+    current = ""
+
+    # Build list of folders to create
+    for part in folder.split("/"):
+        current = f"{current}/{part}" if current else part
+        folder_id = f"projects/{{project}}/assets/{current}"
+
+        try:
+            await get_asset(async_client, folder_id)
+            logger.debug(f"Folder exists: {current}")
+        except Exception:
+            folders_to_create.append(current)
+
+    for folder_id in folders_to_create:
+        await async_client.rest_call(
+            "POST",
+            "{EARTH_ENGINE_API_URL}/projects/{project}/assets",
+            params={"assetId": folder_id},
+            data={"type": "FOLDER"},
+        )
+
+    return async_client.get_assets_folder() / Path(folder)

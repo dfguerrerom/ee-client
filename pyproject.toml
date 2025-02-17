@@ -15,6 +15,7 @@ dependencies = [
     "httpx",
     "aiogoogle",
     "tenacity",
+    "pydantic",
 ]
 
 classifiers = [
