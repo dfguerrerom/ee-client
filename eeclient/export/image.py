@@ -93,13 +93,12 @@ class ExportOptions(BaseExportModel):
     priority: Optional[int] = None
 
     file_export_options: Optional[DriveOptions] = None
-    drive_export_options: Optional[AssetOptions] = None
+    asset_export_options: Optional[AssetOptions] = None
     # TODO: Add support for other export options.
     # See the api: https://developers.google.com/earth-engine/reference/rest/v1alpha/projects.table/export#TableFileExportOptions
 
 
-class ExtraExportOpotions(BaseExportModel):
-    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None
+class ExtraExportOptions(BaseExportModel):
     scale: Optional[float] = None
     crs: Optional[str] = None
     crs_transform: Optional[AffineTransform] = None
@@ -143,24 +142,26 @@ async def export_image(
         workload_tag=workload_tag,
         priority=priority,
         file_export_options=drive_options,
-        drive_export_options=asset_options,
+        asset_export_options=asset_options,
     )
 
     request_params = export_options.model_dump(by_alias=True, exclude_none=True)
 
     # These are additional params that are part of the earthengine-api
-    image_options = ExtraExportOpotions(
-        region=region,
+    image_options = ExtraExportOptions(
         scale=scale,
         crs=crs,
         crs_transform=crs_transform,
     )
     image_params = image_options.model_dump(by_alias=False, exclude_none=True)
 
+    # Do this to avoid set the region in the ExportOptions model, it cannot validate it...
+    # TODO: check the error
+    image_params["region"] = region
+
     image, updated_image_params, dimensions_consumed = image._apply_crs_and_affine(
         image_params
     )
-
     image._apply_selection_and_scale(updated_image_params, dimensions_consumed)
 
     expression = serializer.encode(image, for_cloud_api=True)
@@ -173,10 +174,10 @@ async def export_image(
 async def image_to_drive(
     async_client: "AsyncEESession",
     image,
-    filename_prefix: str,
+    filename_prefix: str = "",
     folder: Optional[str] = None,
-    file_format: ImageFileFormat = ImageFileFormat.JPEG,
-    description: str = "myExportTableTask",
+    file_format: ImageFileFormat = ImageFileFormat.GEO_TIFF,
+    description: str = "Image",
     max_pixels: Optional[int] = None,
     grid: Optional[PixelGrid] = None,
     request_id: Optional[str] = None,
@@ -191,7 +192,7 @@ async def image_to_drive(
     drive_options = DriveOptions(
         file_format=file_format,
         drive_destination=DriveDestination(
-            filename_prefix=filename_prefix, folder=folder
+            filename_prefix=filename_prefix or description, folder=folder
         ),
     )
 
@@ -215,7 +216,7 @@ async def image_to_drive(
 async def image_to_asset(
     async_client: "AsyncEESession",
     image,
-    asset_name: str,
+    asset_id: str,
     description: str = "myExportTableTask",
     max_pixels: Optional[int] = None,
     grid: Optional[PixelGrid] = None,
@@ -229,7 +230,7 @@ async def image_to_asset(
 ) -> dict:
     """Abstracts the export of an image to Earth Engine Asset."""
     asset_options = AssetOptions(
-        earth_engine_destination=EarthEngineDestination(name=asset_name),
+        earth_engine_destination=EarthEngineDestination(name=asset_id),
     )
 
     return await export_image(
