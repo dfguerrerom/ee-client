@@ -186,6 +186,11 @@ async def create_folder(
     Raises:
         ValueError: If the folder path is empty or invalid.
     """
+
+    # check if project path is passed, throw error if it is
+    if str(folder).startswith("projects/"):
+        raise ValueError("Folders should be relative to the project root")
+
     folder = str(folder)
 
     if not folder or not folder.strip("/"):
