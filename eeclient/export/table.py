@@ -143,7 +143,7 @@ async def table_to_drive(
 async def table_to_asset(
     async_client: "AsyncEESession",
     collection,
-    asset_name: str,
+    asset_id: str,
     description: str = "myExportTableTask",
     selectors: Optional[list] = None,
     max_vertices: Optional[int] = None,
@@ -153,7 +153,7 @@ async def table_to_asset(
     Export a table to Earth Engine Asset.
     """
     asset_options = AssetOptions(
-        earth_engine_destination=EarthEngineDestination(name=asset_name)
+        earth_engine_destination=EarthEngineDestination(name=asset_id)
     )
 
     return await export_table(
