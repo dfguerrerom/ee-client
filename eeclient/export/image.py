@@ -1,12 +1,13 @@
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 from pydantic import BaseModel, ConfigDict, model_validator, root_validator
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
     from eeclient.async_client import AsyncEESession
 
-from ee import serializer, encodable
+from ee import serializer
+import ee
 
 
 class ImageFileFormat(str, Enum):
@@ -83,7 +84,7 @@ class PixelGrid(BaseModel):
 
 
 class ExportOptions(BaseExportModel):
-    expression: dict
+    # expression: dict
     description: str = "myExportTableTask"
     max_pixels: Optional[int] = None
     grid: Optional[PixelGrid] = None
@@ -95,6 +96,14 @@ class ExportOptions(BaseExportModel):
     drive_export_options: Optional[AssetOptions] = None
     # TODO: Add support for other export options.
     # See the api: https://developers.google.com/earth-engine/reference/rest/v1alpha/projects.table/export#TableFileExportOptions
+
+
+class ExtraExportOpotions(BaseExportModel):
+    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None
+    scale: Optional[float] = None
+    crs: Optional[str] = None
+    crs_transform: Optional[AffineTransform] = None
+    # TODO I didn't add dimensions...
 
 
 async def export_image(
@@ -109,6 +118,10 @@ async def export_image(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
+    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,
+    scale: Optional[float] = None,
+    crs: Optional[str] = None,
+    crs_transform: Optional[AffineTransform] = None,
 ) -> dict:
     """
     Export a table to either Google Drive or Earth Engine Asset.
@@ -122,11 +135,7 @@ async def export_image(
             "You must provide exactly one of drive_options or asset_options."
         )
 
-    if isinstance(image, encodable.Encodable):
-        expression = serializer.encode(image, for_cloud_api=True)
-
     export_options = ExportOptions(
-        expression=expression,  # type: ignore
         description=description,
         max_pixels=max_pixels,
         grid=grid,
@@ -137,10 +146,28 @@ async def export_image(
         drive_export_options=asset_options,
     )
 
-    params = export_options.model_dump(by_alias=True, exclude_none=True)
+    request_params = export_options.model_dump(by_alias=True, exclude_none=True)
+
+    # These are additional params that are part of the earthengine-api
+    image_options = ExtraExportOpotions(
+        region=region,
+        scale=scale,
+        crs=crs,
+        crs_transform=crs_transform,
+    )
+    image_params = image_options.model_dump(by_alias=False, exclude_none=True)
+
+    image, updated_image_params, dimensions_consumed = image._apply_crs_and_affine(
+        image_params
+    )
+
+    image._apply_selection_and_scale(updated_image_params, dimensions_consumed)
+
+    expression = serializer.encode(image, for_cloud_api=True)
+    request_params["expression"] = expression
 
     url = "{EARTH_ENGINE_API_URL}/projects/{project}/image:export"
-    return await async_client.rest_call("POST", url, data=params)
+    return await async_client.rest_call("POST", url, data=request_params)
 
 
 async def image_to_drive(
@@ -155,6 +182,10 @@ async def image_to_drive(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
+    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,
+    scale: Optional[float] = None,
+    crs: Optional[str] = None,
+    crs_transform: Optional[AffineTransform] = None,
 ) -> dict:
     """Abstracts the export of an image to Google Drive."""
     drive_options = DriveOptions(
@@ -174,6 +205,10 @@ async def image_to_drive(
         request_id=request_id,
         workload_tag=workload_tag,
         priority=priority,
+        region=region,
+        scale=scale,
+        crs=crs,
+        crs_transform=crs_transform,
     )
 
 
@@ -187,6 +222,10 @@ async def image_to_asset(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
+    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,
+    scale: Optional[float] = None,
+    crs: Optional[str] = None,
+    crs_transform: Optional[AffineTransform] = None,
 ) -> dict:
     """Abstracts the export of an image to Earth Engine Asset."""
     asset_options = AssetOptions(
@@ -203,4 +242,8 @@ async def image_to_asset(
         request_id=request_id,
         workload_tag=workload_tag,
         priority=priority,
+        region=region,
+        scale=scale,
+        crs=crs,
+        crs_transform=crs_transform,
     )
