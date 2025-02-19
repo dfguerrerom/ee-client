@@ -82,6 +82,11 @@ class AsyncEESession:
             )
 
         self.project_id = self.sepal_user_data["googleTokens"]["projectId"]
+        if not self.project_id:
+            raise EEClientError(
+                "No project ID found in the user data. Please authenticate select a project."
+            )
+
         self._async_client = None
 
         # Initialize credentials from the initial tokens
@@ -91,8 +96,8 @@ class AsyncEESession:
         # if not I will get this error:
         # httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://danielg.sepal.io/api/user-files/listFiles/?path=%2F&extensions='
 
-    def get_assets_folder(self) -> Path:
-        return Path(f"projects/{self.project_id}/assets/")
+    def get_assets_folder(self) -> str:
+        return f"projects/{self.project_id}/assets/"
 
     def _initialize_credentials(self):
         """Initialize credentials from the initial Google tokens"""
@@ -179,7 +184,9 @@ class AsyncEESession:
                     self._credentials = response.json()
                     self.expiry_date = self._credentials["access_token_expiry_date"]
                     self.project_id = self._credentials["project_id"]
-                    logger.debug("Successfully refreshed credentials.")
+                    logger.debug(
+                        f"Successfully refreshed credentials !{self._credentials}."
+                    )
                     return
                 else:
                     logger.debug(
@@ -209,11 +216,9 @@ class AsyncEESession:
 
         async def _make_request():
             try:
-                url_with_project = self.set_url_project(url)
-                logger.debug(f"Making async {method} request to {url_with_project}")
-
-                # Use the managed client
                 async with self.get_client() as client:
+                    url_with_project = self.set_url_project(url)
+                    logger.debug(f"Making async {method} request to {url_with_project}")
                     response = await client.request(
                         method, url_with_project, json=data, params=params
                     )
@@ -250,6 +255,12 @@ class AsyncEESession:
                         f"Waiting {wait_time} seconds..."
                     )
                     await asyncio.sleep(wait_time)
+                elif result.code == 401:  # Unauthorized
+                    # This happens when the credentials change during the session
+                    logger.debug(
+                        "Unauthorized request. Refreshing credentials and retrying."
+                    )
+                    await self.set_credentials()
                 else:
                     raise result
             else:
@@ -261,7 +272,7 @@ class AsyncEESession:
         """Set the API URL with the project id"""
 
         return url.format(
-            EARTH_ENGINE_API_URL=EARTH_ENGINE_API_URL, project=self.project_id
+            earth_engine_api_url=EARTH_ENGINE_API_URL, project=self.project_id
         )
 
     @property

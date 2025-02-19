@@ -4,6 +4,7 @@ from ee.feature import Feature
 from ee.featurecollection import FeatureCollection
 from ee.image import Image
 from eeclient.typing import MapTileOptions
+from ee.data import convert_asset_id_to_asset_name  # type: ignore: it will be imported from another moduel
 
 
 def _get_ee_image(

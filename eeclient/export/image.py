@@ -167,7 +167,7 @@ async def export_image(
     expression = serializer.encode(image, for_cloud_api=True)
     request_params["expression"] = expression
 
-    url = "{EARTH_ENGINE_API_URL}/projects/{project}/image:export"
+    url = "{earth_engine_api_url}/projects/{project}/image:export"
     return await async_client.rest_call("POST", url, data=request_params)
 
 

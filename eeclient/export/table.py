@@ -106,7 +106,7 @@ async def export_table(
 
     params = export_options.model_dump(by_alias=True, exclude_none=True)
 
-    url = "{EARTH_ENGINE_API_URL}/projects/{project}/table:export"
+    url = "{earth_engine_api_url}/projects/{project}/table:export"
     return await async_client.rest_call("POST", url, data=params)
 
 
