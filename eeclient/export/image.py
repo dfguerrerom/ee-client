@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, model_validator, root_validator
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
-    from eeclient.async_client import AsyncEESession
+    from eeclient.client import AsyncEESession
 
 from ee import serializer
 import ee
@@ -117,7 +117,7 @@ async def export_image(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
-    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,
+    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,  # type: ignore
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
@@ -183,7 +183,7 @@ async def image_to_drive(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
-    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,
+    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,  # type: ignore
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
@@ -223,7 +223,7 @@ async def image_to_asset(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
-    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,
+    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,  # type: ignore
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
