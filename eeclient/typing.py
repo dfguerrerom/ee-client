@@ -1,5 +1,4 @@
 from typing import Dict, List, TypedDict
-from httpx._types import CookieTypes, HeaderTypes
 from typing import Union
 
 
