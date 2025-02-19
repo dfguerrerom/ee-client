@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
+from eeclient.exceptions import EERestException
 from eeclient.logger import logger
 from eeclient.typing import MapTileOptions
 from eeclient.helpers import _get_ee_image, convert_asset_id_to_asset_name
@@ -120,7 +121,17 @@ async def get_asset(async_client: "AsyncEESession", ee_asset_id: str):
     # I need first to set the project before converting the asset id to asset name
     ee_asset_id = async_client.set_url_project(ee_asset_id)
     url = "{earth_engine_api_url}/" + convert_asset_id_to_asset_name(ee_asset_id)
-    return await async_client.rest_call("GET", url)
+    try:
+        return await async_client.rest_call("GET", url)
+    except EERestException as e:
+        if e.code == 404:
+            logger.info(f"Asset: '{ee_asset_id}' not found")
+            return None
+        else:
+            raise e
+    except Exception as e:
+        logger.error(f"Unexpected error while getting asset {ee_asset_id}: {e}")
+        raise
 
 
 async def list_assets_concurrently(async_client: "AsyncEESession", folders):

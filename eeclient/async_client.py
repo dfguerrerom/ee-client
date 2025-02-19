@@ -13,6 +13,7 @@ from functools import wraps
 from eeclient.export.image import image_to_asset, image_to_drive
 from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
+from eeclient.tasks import get_task, get_task_by_name, get_tasks
 from eeclient.typing import GEEHeaders, SepalHeaders
 from eeclient.async_data import (
     create_folder,
@@ -208,7 +209,7 @@ class AsyncEESession:
         url: str,
         data: Optional[Dict] = None,
         params: Optional[Dict] = None,
-        max_attempts: int = 5,
+        max_attempts: int = 4,
         initial_wait: float = 1,
         max_wait: float = 60,
     ) -> Dict[str, Any]:
@@ -247,26 +248,37 @@ class AsyncEESession:
         while attempt < max_attempts:
             result = await _make_request()
             if isinstance(result, EERestException):
-                if result.code == 429:  # Rate limit exceeded
+                if result.code in [429, 401]:
+
+                    error = ""
                     attempt += 1
                     wait_time = min(initial_wait * (2**attempt), max_wait)
+
+                    if result.code == 429:
+                        error = "Rate limit exceeded"
+
+                    if result.code == 401:
+                        # This happens when the credentials change during the session
+                        error = "Unauthorized"
+                        await self.set_credentials()
+
                     logger.debug(
-                        f"Rate limit exceeded. Attempt {attempt}/{max_attempts}. "
+                        f"{error}. Attempt {attempt}/{max_attempts}. "
                         f"Waiting {wait_time} seconds..."
                     )
                     await asyncio.sleep(wait_time)
-                elif result.code == 401:  # Unauthorized
-                    # This happens when the credentials change during the session
-                    logger.debug(
-                        "Unauthorized request. Refreshing credentials and retrying."
-                    )
-                    await self.set_credentials()
                 else:
                     raise result
             else:
                 return result
 
-        raise EERestException({"code": 429, "message": "Max retry attempts reached"})
+        raise EERestException(
+            {
+                "code": 429,
+                "message": "Max retry attempts reached: "
+                + str(result.message),  # type: ignore
+            }
+        )
 
     def set_url_project(self, url: str) -> str:
         """Set the API URL with the project id"""
@@ -283,6 +295,10 @@ class AsyncEESession:
     @property
     def export(self):
         return _Export(self)
+
+    @property
+    def tasks(self):
+        return _Tasks(self)
 
 
 class _Operations:
@@ -332,3 +348,17 @@ class _Export:
 
     def image_to_asset(self, image, **kwargs):
         return asyncio.run(image_to_asset(self._session, image, **kwargs))
+
+
+class _Tasks:
+    def __init__(self, session):
+        self._session = session
+
+    async def get_tasks(self):
+        return await get_tasks(self._session)
+
+    async def get_task(self, task_id):
+        return await get_task(self._session, task_id)
+
+    async def get_task_by_name(self, asset_name):
+        return await get_task_by_name(self._session, asset_name)
