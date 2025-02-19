@@ -354,11 +354,11 @@ class _Tasks:
     def __init__(self, session):
         self._session = session
 
-    async def get_tasks(self):
-        return await get_tasks(self._session)
+    def get_tasks(self):
+        return asyncio.run(get_tasks(self._session))
 
-    async def get_task(self, task_id):
-        return await get_task(self._session, task_id)
+    def get_task(self, task_id):
+        return asyncio.run(get_task(self._session, task_id))
 
-    async def get_task_by_name(self, asset_name):
-        return await get_task_by_name(self._session, asset_name)
+    def get_task_by_name(self, asset_name):
+        return asyncio.run(get_task_by_name(self._session, asset_name))
