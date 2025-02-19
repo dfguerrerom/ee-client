@@ -1,8 +1,10 @@
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
+from eeclient.logger import logger
 from eeclient.typing import MapTileOptions
-from eeclient.helpers import _get_ee_image
+from eeclient.helpers import _get_ee_image, convert_asset_id_to_asset_name
 
 if TYPE_CHECKING:
     from eeclient.async_client import AsyncEESession
@@ -45,7 +47,7 @@ async def get_map_id(
     # rename
     format_ = format
 
-    url = "{EARTH_ENGINE_API_URL}/projects/{project}/maps"
+    url = "{earth_engine_api_url}/projects/{project}/maps"
 
     request_body = {
         "expression": serializer.encode(ee_image_request["image"], for_cloud_api=True),
@@ -115,7 +117,9 @@ async def get_asset(async_client: "AsyncEESession", ee_asset_id: str):
     Returns:
         The asset info as returned by the API.
     """
-    url = "{EARTH_ENGINE_API_URL}/" + ee_asset_id
+    # I need first to set the project before converting the asset id to asset name
+    ee_asset_id = async_client.set_url_project(ee_asset_id)
+    url = "{earth_engine_api_url}/" + convert_asset_id_to_asset_name(ee_asset_id)
     return await async_client.rest_call("GET", url)
 
 
@@ -170,3 +174,55 @@ async def get_assets_async(
                     await folder_queue.put(asset["name"])
 
     return asset_list
+
+
+async def create_folder(
+    async_client: "AsyncEESession", folder: Union[Path, str]
+) -> Path:
+    """Create a folder and its parents in Earth Engine if they don't exist.
+
+    Args:
+        async_client: The asynchronous session object.
+        folder: The folder path (e.g. 'parent/child/grandchild').
+
+    Raises:
+        ValueError: If the folder path is empty or invalid.
+    """
+
+    # check if project path is passed, throw error if it is
+    if str(folder).startswith("projects/"):
+        raise ValueError("Folders should be relative to the project root")
+
+    folder = str(folder)
+
+    if not folder or not folder.strip("/"):
+        raise ValueError("Folder path cannot be empty")
+
+    # Clean and split the path
+    folder = folder.strip("/")
+    folders_to_create = []
+    current = ""
+
+    # Build list of folders to create
+    for part in folder.split("/"):
+        current = f"{current}/{part}" if current else part
+        folder_id = f"projects/{{project}}/assets/{current}"
+
+        try:
+            logger.debug(f"Checking if folder exists: {current}, {folder_id}")
+            await get_asset(async_client, folder_id)
+            logger.debug(f"Folder exists: {current}")
+        except Exception:
+            folders_to_create.append(current)
+
+    logger.debug(f"Creating folders: {folders_to_create}")
+
+    for folder_id in folders_to_create:
+        await async_client.rest_call(
+            "POST",
+            "{earth_engine_api_url}/projects/{project}/assets",
+            params={"assetId": folder_id},
+            data={"type": "FOLDER"},
+        )
+
+    return async_client.get_assets_folder() / Path(folder)

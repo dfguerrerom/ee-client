@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 import os
@@ -9,10 +10,18 @@ from contextlib import asynccontextmanager
 from functools import wraps
 
 
+from eeclient.export.image import image_to_asset, image_to_drive
 from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.typing import GEEHeaders, SepalHeaders
-from eeclient.async_data import get_asset, get_assets_async, get_info, get_map_id
+from eeclient.async_data import (
+    create_folder,
+    get_asset,
+    get_assets_async,
+    get_info,
+    get_map_id,
+)
+from eeclient.export.table import table_to_asset, table_to_drive
 
 SEPAL_HOST = os.getenv("SEPAL_HOST")
 if not SEPAL_HOST:
@@ -73,10 +82,22 @@ class AsyncEESession:
             )
 
         self.project_id = self.sepal_user_data["googleTokens"]["projectId"]
+        if not self.project_id:
+            raise EEClientError(
+                "No project ID found in the user data. Please authenticate select a project."
+            )
+
         self._async_client = None
 
         # Initialize credentials from the initial tokens
         self._initialize_credentials()
+
+        # Maybe do a test? and check that the session is valid
+        # if not I will get this error:
+        # httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://danielg.sepal.io/api/user-files/listFiles/?path=%2F&extensions='
+
+    def get_assets_folder(self) -> str:
+        return f"projects/{self.project_id}/assets/"
 
     def _initialize_credentials(self):
         """Initialize credentials from the initial Google tokens"""
@@ -162,7 +183,10 @@ class AsyncEESession:
                 if response.status_code == 200:
                     self._credentials = response.json()
                     self.expiry_date = self._credentials["access_token_expiry_date"]
-                    logger.debug("Successfully refreshed credentials.")
+                    self.project_id = self._credentials["project_id"]
+                    logger.debug(
+                        f"Successfully refreshed credentials !{self._credentials}."
+                    )
                     return
                 else:
                     logger.debug(
@@ -183,6 +207,7 @@ class AsyncEESession:
         method: Literal["GET", "POST"],
         url: str,
         data: Optional[Dict] = None,
+        params: Optional[Dict] = None,
         max_attempts: int = 5,
         initial_wait: float = 1,
         max_wait: float = 60,
@@ -191,12 +216,12 @@ class AsyncEESession:
 
         async def _make_request():
             try:
-                url_with_project = self.set_url_project(url)
-                logger.debug(f"Making async {method} request to {url_with_project}")
-
-                # Use the managed client
                 async with self.get_client() as client:
-                    response = await client.request(method, url_with_project, json=data)
+                    url_with_project = self.set_url_project(url)
+                    logger.debug(f"Making async {method} request to {url_with_project}")
+                    response = await client.request(
+                        method, url_with_project, json=data, params=params
+                    )
 
                     if response.status_code >= 400:
                         if "application/json" in response.headers.get(
@@ -230,6 +255,12 @@ class AsyncEESession:
                         f"Waiting {wait_time} seconds..."
                     )
                     await asyncio.sleep(wait_time)
+                elif result.code == 401:  # Unauthorized
+                    # This happens when the credentials change during the session
+                    logger.debug(
+                        "Unauthorized request. Refreshing credentials and retrying."
+                    )
+                    await self.set_credentials()
                 else:
                     raise result
             else:
@@ -241,13 +272,17 @@ class AsyncEESession:
         """Set the API URL with the project id"""
 
         return url.format(
-            EARTH_ENGINE_API_URL=EARTH_ENGINE_API_URL, project=self.project_id
+            earth_engine_api_url=EARTH_ENGINE_API_URL, project=self.project_id
         )
 
     @property
     def operations(self):
         # Return an object that bundles operations, passing self as the session.
         return _Operations(self)
+
+    @property
+    def export(self):
+        return _Export(self)
 
 
 class _Operations:
@@ -277,3 +312,23 @@ class _Operations:
 
     def get_asset(self, ee_asset_id):
         return asyncio.run(get_asset(self._session, ee_asset_id))
+
+    def create_folder(self, folder: str):
+        return asyncio.run(create_folder(self._session, folder))
+
+
+class _Export:
+    def __init__(self, session):
+        self._session = session
+
+    def table_to_drive(self, collection, **kwargs):
+        return asyncio.run(table_to_drive(self._session, collection, **kwargs))
+
+    def table_to_asset(self, collection, **kwargs):
+        return asyncio.run(table_to_asset(self._session, collection, **kwargs))
+
+    def image_to_drive(self, image, **kwargs):
+        return asyncio.run(image_to_drive(self._session, image, **kwargs))
+
+    def image_to_asset(self, image, **kwargs):
+        return asyncio.run(image_to_asset(self._session, image, **kwargs))
