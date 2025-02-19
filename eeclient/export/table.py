@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
-    from eeclient.async_client import AsyncEESession
+    from eeclient.client import AsyncEESession
 
 from ee import serializer, encodable
 

@@ -1,14 +1,13 @@
-from typing import TYPE_CHECKING, List, Optional, Union
-
-from eeclient.exceptions import EERestException
-from eeclient.logger import logger
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from eeclient.async_client import AsyncEESession
-
+    from eeclient.client import AsyncEESession
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any
 from datetime import datetime
+
+from eeclient.exceptions import EERestException
+from eeclient.logger import logger
 
 
 class CamelCaseModel(BaseModel):
