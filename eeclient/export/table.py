@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
-    from eeclient.client import AsyncEESession
+    from eeclient.client import EESession
 
 from ee import serializer, encodable
 
@@ -63,7 +63,7 @@ class ExportOptions(BaseExportModel):
 
 
 async def export_table(
-    async_client: "AsyncEESession",
+    client: "EESession",
     collection,
     *,
     drive_options: Optional[DriveOptions] = None,
@@ -107,11 +107,11 @@ async def export_table(
     params = export_options.model_dump(by_alias=True, exclude_none=True)
 
     url = "{earth_engine_api_url}/projects/{project}/table:export"
-    return await async_client.rest_call("POST", url, data=params)
+    return await client.rest_call("POST", url, data=params)
 
 
 async def table_to_drive(
-    async_client: "AsyncEESession",
+    client: "EESession",
     collection,
     filename_prefix: str,
     file_format: TableFileFormat,
@@ -130,7 +130,7 @@ async def table_to_drive(
     )
 
     return await export_table(
-        async_client=async_client,
+        client=client,
         collection=collection,
         drive_options=drive_options,
         description=description,
@@ -141,7 +141,7 @@ async def table_to_drive(
 
 
 async def table_to_asset(
-    async_client: "AsyncEESession",
+    client: "EESession",
     collection,
     asset_id: str,
     description: str = "myExportTableTask",
@@ -157,7 +157,7 @@ async def table_to_asset(
     )
 
     return await export_table(
-        async_client=async_client,
+        client=client,
         collection=collection,
         asset_options=asset_options,
         description=description,

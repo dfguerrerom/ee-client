@@ -8,7 +8,7 @@ from eeclient.typing import MapTileOptions
 from eeclient.helpers import _get_ee_image, convert_asset_id_to_asset_name
 
 if TYPE_CHECKING:
-    from eeclient.async_client import AsyncEESession
+    from eeclient.client import EESession
 
 from ee import serializer
 from ee import _cloud_api_utils
@@ -20,7 +20,7 @@ from ee.data import TileFetcher
 
 
 async def get_map_id(
-    async_client: "AsyncEESession",
+    client: "EESession",
     ee_image: Image,
     vis_params: Union[dict, MapTileOptions] = {},
     bands: Optional[str] = None,
@@ -31,7 +31,7 @@ async def get_map_id(
     Gets the map id of an image.
 
     Args:
-        async_client: The asynchronous session object.
+        client: The asynchronous session object.
         ee_image: The image to get the map id of.
         vis_params (Optional[MapTileOptions]): Visualization parameters,
             such as min/max values, gain, bias, gamma correction,
@@ -56,7 +56,7 @@ async def get_map_id(
         "bandIds": _cloud_api_utils.convert_to_band_list(bands),
     }
 
-    response = await async_client.rest_call("POST", url, data=request_body)
+    response = await client.rest_call("POST", url, data=request_body)
     map_name = response["name"]
 
     _tile_base_url = "https://earthengine.googleapis.com"
@@ -71,7 +71,7 @@ async def get_map_id(
 
 
 async def get_info(
-    async_client: "AsyncEESession",
+    client: "EESession",
     ee_object: Union[ComputedObject, None] = None,
     workloadTag=None,
     serialized_object=None,
@@ -81,7 +81,7 @@ async def get_info(
     Gets the info of an Earth Engine object.
 
     Args:
-        async_client: The asynchronous session object.
+        client: The asynchronous session object.
         ee_object: The Earth Engine object (ComputedObject) to compute info from.
         workloadTag: An optional workload tag.
         serialized_object: A serialized representation of the object.
@@ -102,27 +102,27 @@ async def get_info(
 
     url = "https://earthengine.googleapis.com/v1/projects/{project}/value:compute"
 
-    response = await async_client.rest_call("POST", url, data=data)
+    response = await client.rest_call("POST", url, data=data)
     return response["result"]
 
 
-async def get_asset(async_client: "AsyncEESession", ee_asset_id: str):
+async def get_asset(client: "EESession", ee_asset_id: str):
     """Async version of get_asset.
 
     Gets the asset info from the asset id.
 
     Args:
-        async_client: The asynchronous session object.
+        client: The asynchronous session object.
         ee_asset_id: The asset id string.
 
     Returns:
         The asset info as returned by the API.
     """
     # I need first to set the project before converting the asset id to asset name
-    ee_asset_id = async_client.set_url_project(ee_asset_id)
+    ee_asset_id = client.set_url_project(ee_asset_id)
     url = "{earth_engine_api_url}/" + convert_asset_id_to_asset_name(ee_asset_id)
     try:
-        return await async_client.rest_call("GET", url)
+        return await client.rest_call("GET", url)
     except EERestException as e:
         if e.code == 404:
             logger.info(f"Asset: '{ee_asset_id}' not found")
@@ -134,11 +134,11 @@ async def get_asset(async_client: "AsyncEESession", ee_asset_id: str):
         raise
 
 
-async def list_assets_concurrently(async_client: "AsyncEESession", folders):
+async def list_assets_concurrently(client: "EESession", folders):
     """List assets concurrently.
 
     Args:
-        async_client: The asynchronous session object.
+        client: The asynchronous session object.
         folders: A list of folder names (or identifiers) for which to list assets.
 
     Returns:
@@ -149,18 +149,16 @@ async def list_assets_concurrently(async_client: "AsyncEESession", folders):
         for folder in folders
     ]
 
-    tasks = (async_client.rest_call("GET", url) for url in urls)
+    tasks = (client.rest_call("GET", url) for url in urls)
     responses = await asyncio.gather(*tasks)
     return [response["assets"] for response in responses if response.get("assets")]
 
 
-async def get_assets_async(
-    async_client: "AsyncEESession", folder: str = ""
-) -> List[dict]:
+async def get_assets_async(client: "EESession", folder: str = "") -> List[dict]:
     """Get all assets in a folder recursively (async version).
 
     Args:
-        async_client: The asynchronous session object.
+        client: The asynchronous session object.
         folder: The starting folder name or id.
 
     Returns:
@@ -174,7 +172,7 @@ async def get_assets_async(
         current_folders = [
             await folder_queue.get() for _ in range(folder_queue.qsize())
         ]
-        assets_groups = await list_assets_concurrently(async_client, current_folders)
+        assets_groups = await list_assets_concurrently(client, current_folders)
 
         for assets in assets_groups:
             for asset in assets:
@@ -187,13 +185,11 @@ async def get_assets_async(
     return asset_list
 
 
-async def create_folder(
-    async_client: "AsyncEESession", folder: Union[Path, str]
-) -> Path:
+async def create_folder(client: "EESession", folder: Union[Path, str]) -> Path:
     """Create a folder and its parents in Earth Engine if they don't exist.
 
     Args:
-        async_client: The asynchronous session object.
+        client: The asynchronous session object.
         folder: The folder path (e.g. 'parent/child/grandchild').
 
     Raises:
@@ -221,7 +217,7 @@ async def create_folder(
 
         try:
             logger.debug(f"Checking if folder exists: {current}, {folder_id}")
-            await get_asset(async_client, folder_id)
+            await get_asset(client, folder_id)
             logger.debug(f"Folder exists: {current}")
         except Exception:
             folders_to_create.append(current)
@@ -229,11 +225,11 @@ async def create_folder(
     logger.debug(f"Creating folders: {folders_to_create}")
 
     for folder_id in folders_to_create:
-        await async_client.rest_call(
+        await client.rest_call(
             "POST",
             "{earth_engine_api_url}/projects/{project}/assets",
             params={"assetId": folder_id},
             data={"type": "FOLDER"},
         )
 
-    return async_client.get_assets_folder() / Path(folder)
+    return client.get_assets_folder() / Path(folder)

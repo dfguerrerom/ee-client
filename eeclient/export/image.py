@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, model_validator, root_validator
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
-    from eeclient.client import AsyncEESession
+    from eeclient.client import EESession
 
 from ee import serializer
 import ee
@@ -106,7 +106,7 @@ class ExtraExportOptions(BaseExportModel):
 
 
 async def export_image(
-    async_client: "AsyncEESession",
+    client: "EESession",
     image,
     *,
     drive_options: Optional[DriveOptions] = None,
@@ -168,11 +168,11 @@ async def export_image(
     request_params["expression"] = expression
 
     url = "{earth_engine_api_url}/projects/{project}/image:export"
-    return await async_client.rest_call("POST", url, data=request_params)
+    return await client.rest_call("POST", url, data=request_params)
 
 
 async def image_to_drive(
-    async_client: "AsyncEESession",
+    client: "EESession",
     image,
     filename_prefix: str = "",
     folder: Optional[str] = None,
@@ -197,7 +197,7 @@ async def image_to_drive(
     )
 
     return await export_image(
-        async_client=async_client,
+        client=client,
         image=image,
         drive_options=drive_options,
         description=description,
@@ -214,7 +214,7 @@ async def image_to_drive(
 
 
 async def image_to_asset(
-    async_client: "AsyncEESession",
+    client: "EESession",
     image,
     asset_id: str,
     description: str = "myExportTableTask",
@@ -234,7 +234,7 @@ async def image_to_asset(
     )
 
     return await export_image(
-        async_client=async_client,
+        client=client,
         image=image,
         asset_options=asset_options,
         description=description,

@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from eeclient.client import AsyncEESession
+    from eeclient.client import EESession
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any
 from datetime import datetime
@@ -62,7 +62,7 @@ class TasksResponse(CamelCaseModel):
     operations: List[Task]
 
 
-async def get_tasks(async_client: "AsyncEESession") -> TasksResponse:
+async def get_tasks(client: "EESession") -> TasksResponse:
     """Search for the described task in the user Task list return None if nothing is found.
 
     Args:
@@ -72,12 +72,12 @@ async def get_tasks(async_client: "AsyncEESession") -> TasksResponse:
         return the found task else None
     """
     url = "{earth_engine_api_url}/projects/{project}" + "/operations"
-    response_data = await async_client.rest_call("GET", url)
+    response_data = await client.rest_call("GET", url)
     operations_response = TasksResponse.model_validate(response_data)
     return operations_response
 
 
-async def get_task(async_client: "AsyncEESession", task_id: str):
+async def get_task(client: "EESession", task_id: str):
     """Search for the described task in the user Task list return None if nothing is found.
 
     Args:
@@ -88,7 +88,7 @@ async def get_task(async_client: "AsyncEESession", task_id: str):
     """
     url = "{earth_engine_api_url}/projects/{project}" + "/operations/" + task_id
     try:
-        response_data = await async_client.rest_call("GET", url)
+        response_data = await client.rest_call("GET", url)
         task = Task.model_validate(response_data)
         return task
     except EERestException as e:
@@ -100,9 +100,7 @@ async def get_task(async_client: "AsyncEESession", task_id: str):
         raise e
 
 
-async def get_task_by_name(
-    async_client: "AsyncEESession", asset_name: str
-) -> Optional[Task]:
+async def get_task_by_name(client: "EESession", asset_name: str) -> Optional[Task]:
     """Search for the described task in the user Task list return None if nothing is found.
 
     Args:
@@ -111,7 +109,7 @@ async def get_task_by_name(
     Returns:
         return the found task else None
     """
-    operations_response = await get_tasks(async_client)
+    operations_response = await get_tasks(client)
     for task in operations_response.operations:
         if task.metadata.description == asset_name:
             return task

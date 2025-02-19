@@ -61,7 +61,7 @@ def sync_wrapper(async_func):
     return wrapper
 
 
-class AsyncEESession:
+class EESession:
     def __init__(self, sepal_headers: SepalHeaders):
         """Session that handles two scenarios to set the headers for the Earth Engine API
 
