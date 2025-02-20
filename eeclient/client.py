@@ -7,16 +7,16 @@ import json
 import asyncio
 import httpx
 from contextlib import asynccontextmanager
-from functools import wraps
 
 
 from eeclient.export.image import image_to_asset, image_to_drive
 from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.tasks import get_task, get_task_by_name, get_tasks
-from eeclient.typing import GEEHeaders, SepalHeaders
-from eeclient.async_data import (
+from eeclient.typing import GEEHeaders, GoogleTokens, MapTileOptions, SepalHeaders
+from eeclient.data import (
     create_folder,
+    delete_asset,
     get_asset,
     get_assets_async,
     get_info,
@@ -34,61 +34,25 @@ VERIFY_SSL = not (
 )
 
 
-def parse_cookie_string(cookie_string):
-    cookies = {}
-    for pair in cookie_string.split(";"):
-        key_value = pair.strip().split("=", 1)
-        if len(key_value) == 2:
-            key, value = key_value
-            cookies[key] = value
-    return cookies
-
-
-def should_retry(exception: Exception) -> bool:
-    """Check if the exception is due to rate limiting"""
-    if isinstance(exception, EERestException):
-        return exception.code == 429
-    return False
-
-
-def sync_wrapper(async_func):
-    """Decorator to run async functions synchronously when needed"""
-
-    @wraps(async_func)
-    def wrapper(*args, **kwargs):
-        return asyncio.run(async_func(*args, **kwargs))
-
-    return wrapper
-
-
 class EESession:
-    def __init__(self, sepal_headers: SepalHeaders):
+    def __init__(self, sepal_headers: SepalHeaders, enforce_project_id: bool = True):
         """Session that handles two scenarios to set the headers for the Earth Engine API
 
         It can be initialized with the headers sent by SEPAL or with the credentials and project
 
+        Args:
+            sepal_headers (SepalHeaders): The headers sent by SEPAL
+            enforce_project_id (Optional[str], optional): If set, it cannot be changed. Defaults to None.
+
         """
         self.expiry_date = 0
-        self.retry_count = 0
         self.max_retries = 3
 
-        self.sepal_headers = sepal_headers
-        self.sepal_cookies = parse_cookie_string(sepal_headers["cookie"][0])
-        self.sepal_user_data = json.loads(sepal_headers["sepal-user"][0])  # type: ignore
-        self.sepal_username = self.sepal_user_data["username"]
+        self.enforce_project_id = enforce_project_id
 
-        if not self.sepal_user_data["googleTokens"]:
-            raise EEClientError(
-                "Authentication required: Please authenticate via sepal. See https://docs.sepal.io/en/latest/setup/gee.html."
-            )
-
-        self.project_id = self.sepal_user_data["googleTokens"]["projectId"]
-        if not self.project_id:
-            raise EEClientError(
-                "No project ID found in the user data. Please authenticate select a project."
-            )
-
-        self._async_client = None
+        self.sepal_headers = SepalHeaders.model_validate(sepal_headers)
+        self.sepal_session_id = self.sepal_headers.cookies["SEPAL-SESSIONID"]
+        self.sepal_user_data = self.sepal_headers.sepal_user
 
         # Initialize credentials from the initial tokens
         self._initialize_credentials()
@@ -97,23 +61,16 @@ class EESession:
         # if not I will get this error:
         # httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://danielg.sepal.io/api/user-files/listFiles/?path=%2F&extensions='
 
-    def get_assets_folder(self) -> str:
-        return f"projects/{self.project_id}/assets/"
-
     def _initialize_credentials(self):
         """Initialize credentials from the initial Google tokens"""
-        _google_tokens = self.sepal_user_data.get("googleTokens")
-        if not _google_tokens:
-            raise EEClientError(
-                "Authentication required: Please authenticate via sepal."
-            )
-        self.expiry_date = _google_tokens["accessTokenExpiryDate"]
-        self._credentials = {
-            "access_token": _google_tokens["accessToken"],
-            "access_token_expiry_date": _google_tokens["accessTokenExpiryDate"],
-            "project_id": _google_tokens["projectId"],
-            "sepal_user": self.sepal_username,
-        }
+        _google_tokens = self.sepal_user_data.google_tokens
+
+        self.expiry_date = _google_tokens.access_token_expiry_date
+        self.project_id = _google_tokens.project_id
+        self._credentials = _google_tokens
+
+    def get_assets_folder(self) -> str:
+        return f"projects/{self.project_id}/assets/"
 
     def is_expired(self) -> bool:
         """Returns if a token is about to expire"""
@@ -124,12 +81,13 @@ class EESession:
         if not self._credentials:
             raise EEClientError("No credentials available")
 
-        access_token = self._credentials["access_token"]
-        return {
-            "x-goog-user-project": str(self.project_id),
-            "Authorization": f"Bearer {access_token}",
-            "Username": str(self.sepal_username),
+        data = {
+            "x-goog-user-project": self.project_id,
+            "Authorization": f"Bearer {self._credentials.access_token}",
+            "Username": self.sepal_user_data.username,
         }
+
+        return GEEHeaders.model_validate(data)
 
     async def get_headers(self) -> GEEHeaders:
         """Async method to get headers, refreshing credentials if needed"""
@@ -144,7 +102,8 @@ class EESession:
 
         timeout = httpx.Timeout(connect=60.0, read=300.0, write=60.0, pool=60.0)
         headers = await self.get_headers()
-        async_client = httpx.AsyncClient(headers=headers, timeout=timeout)  # type: ignore
+        headers = headers.model_dump()  # type: ignore
+        async_client = httpx.AsyncClient(headers=headers, timeout=timeout)
         try:
             yield async_client
         finally:
@@ -163,9 +122,7 @@ class EESession:
 
         # Prepare cookies for authentication.
         sepal_cookies = httpx.Cookies()
-        sepal_cookies.set(
-            "SEPAL-SESSIONID", self.sepal_cookies.get("SEPAL-SESSIONID", "")
-        )
+        sepal_cookies.set("SEPAL-SESSIONID", self.sepal_session_id)
 
         last_status = None
 
@@ -182,9 +139,13 @@ class EESession:
                 last_status = response.status_code
 
                 if response.status_code == 200:
-                    self._credentials = response.json()
-                    self.expiry_date = self._credentials["access_token_expiry_date"]
-                    self.project_id = self._credentials["project_id"]
+                    self._credentials = GoogleTokens.model_validate(response.json())
+                    self.expiry_date = self._credentials.access_token_expiry_date
+                    self.project_id = (
+                        self._credentials.project_id
+                        if not self.enforce_project_id
+                        else self.project_id
+                    )
                     logger.debug(
                         f"Successfully refreshed credentials !{self._credentials}."
                     )
@@ -205,7 +166,7 @@ class EESession:
 
     async def rest_call(
         self,
-        method: Literal["GET", "POST"],
+        method: Literal["GET", "POST", "DELETE"],
         url: str,
         data: Optional[Dict] = None,
         params: Optional[Dict] = None,
@@ -229,14 +190,14 @@ class EESession:
                             "Content-Type", ""
                         ):
                             error_data = response.json().get("error", {})
-                            logger.debug(f"Request failed with error: {error_data}")
+                            logger.error(f"Request failed with error: {error_data}")
                             raise EERestException(error_data)
                         else:
                             error_data = {
                                 "code": response.status_code,
                                 "message": response.reason_phrase,
                             }
-                            logger.debug(f"Request failed with error: {error_data}")
+                            logger.error(f"Request failed with error: {error_data}")
                             raise EERestException(error_data)
 
                     return response.json()
@@ -321,16 +282,21 @@ class _Operations:
             )
         )
 
-    def get_map_id(self, ee_image, vis_params={}, bands=None, format=None):
+    def get_map_id(
+        self, ee_image, vis_params: MapTileOptions = {}, bands=None, format=None  # type: ignore
+    ):
         return asyncio.run(
             get_map_id(self._session, ee_image, vis_params, bands, format)
         )
 
-    def get_asset(self, ee_asset_id):
-        return asyncio.run(get_asset(self._session, ee_asset_id))
+    def get_asset(self, asset_id: str):
+        return asyncio.run(get_asset(self._session, asset_id))
 
     def create_folder(self, folder: str):
         return asyncio.run(create_folder(self._session, folder))
+
+    def delete_asset(self, asset_id):
+        return asyncio.run(delete_asset(self._session, asset_id))
 
 
 class _Export:
