@@ -1,29 +1,22 @@
-from typing import Dict, List, TypedDict
-from typing import Union
+import json
+from typing import Optional, Union, List, Dict
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.alias_generators import to_camel
+
+from eeclient.exceptions import EEClientError
 
 
-class MapTileOptions(TypedDict):
+class MapTileOptions(BaseModel):
     """
     MapTileOptions defines the configuration for map tile generation.
 
-    Keys:
-        min (str or List[str]): Comma-separated numbers representing the values
-            to map onto 00. It can be a string of comma-separated numbers
-            (e.g., "1,2,3") or a list of strings. (e.g., ["1", "2", "3"]).
-        max (str or List[str]): Comma-separated numbers representing the values
-            to map onto FF. It can be a string of comma-separated numbers or
-            a list of strings.
-        gain (str or List[str]): Comma-separated numbers representing the gain
-            to map onto 00-FF. It can be a string of comma-separated numbers or
-            a list of strings.
-        bias (str or List[str]): Comma-separated numbers representing the
-            offset to map onto 00-FF. It can be a string of comma-separated
-            numbers or a list of strings.
-        gamma (str or List[str]): Comma-separated numbers representing the
-            gamma correction factor. It can be a string of comma-separated
-            numbers or a list of strings.
-        palette (str): A string of comma-separated CSS-style color strings
-            (single-band previews only).For example, 'FF0000,000000'.
+    Attributes:
+        min (Union[str, List[str]]): Comma-separated numbers representing the values to map onto 00.
+        max (Union[str, List[str]]): Comma-separated numbers representing the values to map onto FF.
+        gain (Union[str, List[str]]): Comma-separated numbers representing the gain to map onto 00-FF.
+        bias (Union[str, List[str]]): Comma-separated numbers representing the offset to map onto 00-FF.
+        gamma (Union[str, List[str]]): Comma-separated numbers representing the gamma correction factor.
+        palette (str): A string of comma-separated CSS-style color strings (single-band previews only).
         format (str): The desired map tile format.
     """
 
@@ -36,58 +29,145 @@ class MapTileOptions(TypedDict):
     format: str
 
 
-class GoogleTokens(TypedDict):
-    accessToken: str
-    refreshToken: str
-    accessTokenExpiryDate: int
-    REFRESH_IF_EXPIRES_IN_MINUTES: int
-    projectId: str
-    legacyProject: str
-
-
-"""Google tokens sent from sepal to Solara as headers"""
-
+# A type alias for cookies
 SepalCookies = Dict[str, str]
-"""Cookies sent from sepal to Solara for a given user"""
 
 
-class SepalUser(TypedDict):
+class GoogleTokens(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    access_token_expiry_date: int
+    refresh_if_expires_in_minutes: Optional[int] = None
+    project_id: str
+    legacy_project: Optional[bool] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    @model_validator(mode="after")
+    def check_google_tokens(self) -> "GoogleTokens":
+        # Ensure that the project_id in google_tokens is provided
+        if not self.project_id:
+            raise EEClientError(
+                "No project ID found in the user data. Please authenticate select a project."
+            )
+        return self
+
+    @model_validator(mode="before")
+    def parse_if_string(cls, v):
+        """
+        If the input is a JSON string, parse it into a dict.
+        """
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError("Invalid JSON for GoogleTokens") from e
+        return v
+
+
+class SepalUser(BaseModel):
     id: int
     username: str
-    googleTokens: GoogleTokens
+    google_tokens: GoogleTokens
     status: str
     roles: List[str]
-    systemUser: bool
+    system_user: bool
     admin: bool
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
-class SepalHeaders(TypedDict):
-    cookie: List[str]
-    sepal_user: List[SepalUser]
+    @model_validator(mode="after")
+    def check_google_tokens(self) -> "SepalUser":
+        # Ensure that the google_tokens field exists
+        if not self.google_tokens:
+            raise EEClientError(
+                "Authentication required: Please authenticate via sepal. See https://docs.sepal.io/en/latest/setup/gee.html."
+            )
 
-
-"""Headers sent from sepal to Solara for a given user"""
-
-
-GEEHeaders = TypedDict(
-    "GEEHeaders",
-    {
-        "x-goog-user-project": str,
-        "Authorization": str,
-        "Username": str,
-    },
-)
-"""This will be the headers used for each request to the GEE API"""
+        return self
 
 
-class Credentials(TypedDict):
+class SepalHeaders(BaseModel):
+    cookies: SepalCookies = Field(..., alias="cookie")
+    sepal_user: SepalUser = Field(..., alias="sepal-user")
+
+    @field_validator("cookies", mode="before")
+    def parse_cookies(cls, v):
+        """
+        Accepts a list of cookie strings or a single cookie string and converts them into a dictionary.
+        Example input: ['SEPAL-SESSIONID=s:token; OTHERCOOKIE=foo;']
+        """
+        cookies = {}
+        if isinstance(v, list):
+            for cookie_str in v:
+                if isinstance(cookie_str, str):
+                    for cookie_pair in cookie_str.split(";"):
+                        cookie_pair = cookie_pair.strip()
+                        if cookie_pair:
+                            key, sep, value = cookie_pair.partition("=")
+                            if sep:
+                                cookies[key] = value
+        elif isinstance(v, str):
+            for cookie_pair in v.split(";"):
+                cookie_pair = cookie_pair.strip()
+                if cookie_pair:
+                    key, sep, value = cookie_pair.partition("=")
+                    if sep:
+                        cookies[key] = value
+        elif isinstance(v, dict):
+            return v
+        return cookies
+
+    @field_validator("sepal_user", mode="before")
+    def parse_sepal_user(cls, v):
+        """
+        Accepts the sepal-user field which may come as:
+          - A list with a single element.
+          - A JSON string representing the user.
+          - A dict representing the user.
+        Automatically extracts the only element if provided as a list.
+        """
+        if isinstance(v, list):
+            if len(v) != 1:
+                raise ValueError("sepal-user should contain exactly one element")
+            v = v[0]
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError("Invalid JSON string in sepal-user field") from e
+        return v
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class GEEHeaders(BaseModel):
+    x_goog_user_project: str = Field(..., alias="x-goog-user-project")
+    authorization: str = Field(..., alias="Authorization")
+    username: str = Field(..., alias="Username")
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
+class Credentials(BaseModel):
     client_id: str
     client_secret: str
     refresh_token: str
     grant_type: str
 
 
-class GEECredentials(TypedDict):
+class GEECredentials(BaseModel):
     access_token: str
     access_token_expiry_date: int
     project_id: str

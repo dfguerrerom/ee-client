@@ -1,4 +1,5 @@
 from typing import Union
+
 from ee.imagecollection import ImageCollection
 from ee.feature import Feature
 from ee.featurecollection import FeatureCollection
@@ -40,3 +41,13 @@ def _get_ee_image(
 
     else:
         raise ValueError("Invalid ee_object type")
+
+
+def parse_cookie_string(cookie_string):
+    cookies = {}
+    for pair in cookie_string.split(";"):
+        key_value = pair.strip().split("=", 1)
+        if len(key_value) == 2:
+            key, value = key_value
+            cookies[key] = value
+    return cookies

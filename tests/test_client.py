@@ -1,18 +1,22 @@
-import pytest
-from eeclient.async_client import EESession
-from eeclient.data import getInfo
-import ee
-
-ee.Initialize()
-
-session = EESession(test=True)
+import sys
 
 
-def test_get_info():
+from eeclient.client import EESession
 
-    session = EESession(test=True)
-    computed_object = ee.ee_number.Number(1).add(1)
+sys.path.append("..")
 
-    assert getInfo(session, computed_object) == 2
-    assert computed_object.getInfo() == 2
-    assert getInfo(session, computed_object) == computed_object.getInfo()
+
+def test_init_client(sepal_headers):
+
+    sepal_session = EESession(sepal_headers=sepal_headers)
+    assert sepal_session
+    assert sepal_session.project_id == sepal_headers.sepal_user.google_tokens.project_id
+
+
+def test_is_expired(sepal_headers, dummy_headers):
+
+    sepal_session = EESession(sepal_headers=sepal_headers)
+    assert sepal_session.is_expired() == False
+
+    sepal_session = EESession(sepal_headers=dummy_headers)
+    assert sepal_session.is_expired() == True

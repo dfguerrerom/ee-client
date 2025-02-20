@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
@@ -106,7 +107,7 @@ async def get_info(
     return response["result"]
 
 
-async def get_asset(client: "EESession", ee_asset_id: str):
+async def get_asset(client: "EESession", asset_id: str) -> Optional[dict]:
     """Async version of get_asset.
 
     Gets the asset info from the asset id.
@@ -116,21 +117,22 @@ async def get_asset(client: "EESession", ee_asset_id: str):
         ee_asset_id: The asset id string.
 
     Returns:
-        The asset info as returned by the API.
+        The asset info or None if the asset is not found.
     """
     # I need first to set the project before converting the asset id to asset name
-    ee_asset_id = client.set_url_project(ee_asset_id)
-    url = "{earth_engine_api_url}/" + convert_asset_id_to_asset_name(ee_asset_id)
+    asset_id = client.set_url_project(asset_id)
+    logger.debug(f"Getting asset: {asset_id}")
+    url = "{earth_engine_api_url}/" + convert_asset_id_to_asset_name(asset_id)
     try:
         return await client.rest_call("GET", url)
     except EERestException as e:
         if e.code == 404:
-            logger.info(f"Asset: '{ee_asset_id}' not found")
+            logger.info(f"Asset: '{asset_id}' not found")
             return None
         else:
             raise e
     except Exception as e:
-        logger.error(f"Unexpected error while getting asset {ee_asset_id}: {e}")
+        logger.error(f"Unexpected error while getting asset {asset_id}: {e}")
         raise
 
 
@@ -162,7 +164,7 @@ async def get_assets_async(client: "EESession", folder: str = "") -> List[dict]:
         folder: The starting folder name or id.
 
     Returns:
-        A list of asset dictionaries containing type, name, and id.
+
     """
     folder_queue = asyncio.Queue()
     await folder_queue.put(folder)
@@ -185,7 +187,7 @@ async def get_assets_async(client: "EESession", folder: str = "") -> List[dict]:
     return asset_list
 
 
-async def create_folder(client: "EESession", folder: Union[Path, str]) -> Path:
+async def create_folder(client: "EESession", folder: Union[Path, str]) -> str:
     """Create a folder and its parents in Earth Engine if they don't exist.
 
     Args:
@@ -205,6 +207,12 @@ async def create_folder(client: "EESession", folder: Union[Path, str]) -> Path:
     if not folder or not folder.strip("/"):
         raise ValueError("Folder path cannot be empty")
 
+    full_path = str(client.get_assets_folder() / Path(folder))
+
+    if asset := await get_asset(client, full_path):
+        logger.debug(f"Folder already exists: {full_path}")
+        return full_path
+
     # Clean and split the path
     folder = folder.strip("/")
     folders_to_create = []
@@ -215,11 +223,11 @@ async def create_folder(client: "EESession", folder: Union[Path, str]) -> Path:
         current = f"{current}/{part}" if current else part
         folder_id = f"projects/{{project}}/assets/{current}"
 
-        try:
-            logger.debug(f"Checking if folder exists: {current}, {folder_id}")
-            await get_asset(client, folder_id)
-            logger.debug(f"Folder exists: {current}")
-        except Exception:
+        logger.debug(f"Checking if folder exists: {current}, {folder_id}")
+        asset = await get_asset(client, folder_id)
+        if asset:
+            continue
+        else:
             folders_to_create.append(current)
 
     logger.debug(f"Creating folders: {folders_to_create}")
@@ -232,4 +240,61 @@ async def create_folder(client: "EESession", folder: Union[Path, str]) -> Path:
             data={"type": "FOLDER"},
         )
 
-    return client.get_assets_folder() / Path(folder)
+    return full_path
+
+
+async def delete_asset(client, asset_id: Union[str, Path]) -> None:
+    """Delete an asset from Earth Engine."""
+
+    asset_id = str(asset_id)
+    url = "{earth_engine_api_url}/" + convert_asset_id_to_asset_name(asset_id)
+
+    try:
+        await client.rest_call("DELETE", url)
+        logger.info(f"Asset deleted: {asset_id}")
+    except EERestException as e:
+        logger.error(f"Error deleting asset {asset_id}: {e}")
+        if e.code == 404:
+            logger.debug(f"Asset: '{asset_id}' not found")
+            return
+        else:
+            raise e
+    except Exception as e:
+        logger.error(f"Unexpected error while deleting asset {asset_id}: {e}")
+        raise
+
+
+async def delete_folder(
+    client, folder_id: Union[str, Path], recursive: bool = False
+) -> None:
+    """Delete a folder asset. If recursive is True, first delete all child assets asynchronously.
+
+    Args:
+        client: The Earth Engine session object.
+        folder: The folder asset id or path.
+        recursive: Whether to delete child assets recursively.
+    """
+    logger.debug(f"Deleting folder: {folder_id}, recursive={recursive}")
+    folder_id = str(folder_id)
+    if recursive:
+        logger.debug(f"Recursively deleting folder: {folder_id}")
+        assets = await get_assets_async(client, folder_id)
+        if assets:
+            depth_to_assets = defaultdict(list)
+            for asset in assets:
+                depth = asset["id"].count("/")
+                depth_to_assets[depth].append(asset)
+
+            # Process deletion from the deepest assets to the shallowest.
+            for depth in sorted(depth_to_assets.keys(), reverse=True):
+                tasks = [
+                    asyncio.create_task(delete_asset(client, asset["id"]))
+                    for asset in depth_to_assets[depth]
+                ]
+                # Await deletion of all assets at the current depth level.
+                await asyncio.gather(*tasks)
+                logger.info(f"Deleted all assets at depth {depth}")
+
+        await delete_asset(client, folder_id)
+    else:
+        await delete_asset(client, folder_id)
