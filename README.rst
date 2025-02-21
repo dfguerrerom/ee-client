@@ -1,4 +1,4 @@
-Earth Engine Session Client 🌎
+Earth Engine Client 🌎
 ==============================
 
 The **Earth Engine Session Client** is a Python package that extends the Google Earth Engine (GEE) API by introducing multi-user session management through a custom authentication. Unlike the standard GEE API—which relies on a global session object and does not support multi-user environments—this client ensures that each session is authenticated and managed independently.
