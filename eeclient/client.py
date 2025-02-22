@@ -289,8 +289,8 @@ class _Operations:
             get_map_id(self._session, ee_image, vis_params, bands, format)
         )
 
-    def get_asset(self, asset_id: str):
-        return asyncio.run(get_asset(self._session, asset_id))
+    def get_asset(self, asset_id: str, not_exists_ok: bool = False):
+        return asyncio.run(get_asset(self._session, asset_id, not_exists_ok))
 
     def create_folder(self, folder: str):
         return asyncio.run(create_folder(self._session, folder))

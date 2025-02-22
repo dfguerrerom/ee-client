@@ -107,7 +107,9 @@ async def get_info(
     return response["result"]
 
 
-async def get_asset(client: "EESession", asset_id: str) -> Optional[dict]:
+async def get_asset(
+    client: "EESession", asset_id: str, not_exists_ok: bool = True
+) -> Optional[dict]:
     """Async version of get_asset.
 
     Gets the asset info from the asset id.
@@ -115,7 +117,7 @@ async def get_asset(client: "EESession", asset_id: str) -> Optional[dict]:
     Args:
         client: The asynchronous session object.
         ee_asset_id: The asset id string.
-
+        not_exists_ok: Whether to return None if the asset is not found. Otherwise, raise an exception.
     Returns:
         The asset info or None if the asset is not found.
     """
@@ -128,7 +130,9 @@ async def get_asset(client: "EESession", asset_id: str) -> Optional[dict]:
     except EERestException as e:
         if e.code == 404:
             logger.info(f"Asset: '{asset_id}' not found")
-            return None
+            if not_exists_ok:
+                return None
+            raise
         else:
             raise e
     except Exception as e:

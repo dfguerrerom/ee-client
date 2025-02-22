@@ -45,6 +45,9 @@ async def test_create_folder(hash, sepal_headers):
     assert asset["id"] == folder_id
     assert asset["type"] == "FOLDER"
 
+    # Clean up
+    await delete_folder(sepal_session, folder_id=folder_id, recursive=True)
+
 
 @pytest.mark.asyncio
 async def test_delete_asset(sepal_headers):

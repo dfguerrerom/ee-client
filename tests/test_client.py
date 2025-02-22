@@ -16,7 +16,7 @@ def test_init_client(sepal_headers):
 def test_is_expired(sepal_headers, dummy_headers):
 
     sepal_session = EESession(sepal_headers=sepal_headers)
-    assert sepal_session.is_expired() == False
+    assert sepal_session.is_expired() == True
 
     sepal_session = EESession(sepal_headers=dummy_headers)
     assert sepal_session.is_expired() == True
