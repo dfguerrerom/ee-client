@@ -20,6 +20,12 @@ def test_headers(dummy_headers):
     assert sepal_headers.sepal_user.google_tokens.project_id == "ee-project"
 
 
+def test_headers_no_google_tokes(dummy_headers_no_google_tokens):
+
+    with pytest.raises(EEClientError):
+        SepalHeaders.model_validate(dummy_headers_no_google_tokens)
+
+
 def test_without_sepal_user(dummy_headers_no_project_id):
 
     with pytest.raises(EEClientError):

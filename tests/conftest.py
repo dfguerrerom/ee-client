@@ -68,6 +68,16 @@ def dummy_headers_no_project_id():
     }
 
 
+@pytest.fixture()
+def dummy_headers_no_google_tokens():
+    return {
+        "cookie": ["SEPAL-SESSIONID=s:random;"],
+        "sepal-user": [
+            '{"id":10001,"username":"admin","googleTokens":null,"status":"ACTIVE","roles":["application_admin"],"systemUser":false,"admin":true}'
+        ],
+    }
+
+
 @pytest.fixture(scope="session")
 def hash() -> str:
     """Create a hash for each test instance.
