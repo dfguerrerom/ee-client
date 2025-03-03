@@ -211,7 +211,7 @@ async def create_folder(client: "EESession", folder: Union[Path, str]) -> str:
     if not folder or not folder.strip("/"):
         raise ValueError("Folder path cannot be empty")
 
-    full_path = str(client.get_assets_folder() / Path(folder))
+    full_path = str(await client.get_assets_folder() / Path(folder))
 
     if asset := await get_asset(client, full_path):
         logger.debug(f"Folder already exists: {full_path}")

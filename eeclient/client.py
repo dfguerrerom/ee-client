@@ -65,11 +65,16 @@ class EESession:
         """Initialize credentials from the initial Google tokens"""
         _google_tokens = self.sepal_user_data.google_tokens
 
+        if not _google_tokens:
+            raise EEClientError("No google tokens found in the user data.")
+
         self.expiry_date = _google_tokens.access_token_expiry_date
         self.project_id = _google_tokens.project_id
         self._credentials = _google_tokens
 
-    def get_assets_folder(self) -> str:
+    async def get_assets_folder(self) -> str:
+        if self.is_expired():
+            await self.set_credentials()
         return f"projects/{self.project_id}/assets/"
 
     def is_expired(self) -> bool:
@@ -80,6 +85,8 @@ class EESession:
         """Get current headers without refreshing credentials"""
         if not self._credentials:
             raise EEClientError("No credentials available")
+
+        logger.debug(f"Getting headers with project id: {self.project_id}")
 
         data = {
             "x-goog-user-project": self.project_id,
@@ -143,11 +150,11 @@ class EESession:
                     self.expiry_date = self._credentials.access_token_expiry_date
                     self.project_id = (
                         self._credentials.project_id
-                        if not self.enforce_project_id
+                        if self.enforce_project_id
                         else self.project_id
                     )
                     logger.debug(
-                        f"Successfully refreshed credentials !{self._credentials}."
+                        f"Successfully refreshed credentials !{self._credentials}==================. {self.project_id}"
                     )
                     return
                 else:

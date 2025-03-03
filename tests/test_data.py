@@ -56,7 +56,7 @@ async def test_delete_asset(sepal_headers):
     sepal_session = EESession(sepal_headers=sepal_headers)
     await create_folder(sepal_session, folder="1/2/3/4/5/65/")
 
-    folder_to_delete = str(Path(sepal_session.get_assets_folder()) / "1/")
+    folder_to_delete = str(Path(await sepal_session.get_assets_folder()) / "1/")
 
     with pytest.raises(EERestException) as excinfo:
         await delete_asset(sepal_session, asset_id=folder_to_delete)

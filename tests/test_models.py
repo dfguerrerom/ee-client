@@ -15,6 +15,7 @@ def test_headers(dummy_headers):
     assert sepal_headers.cookies == {"SEPAL-SESSIONID": "s:random"}
     assert sepal_headers.sepal_user.id == 10001
     assert sepal_headers.sepal_user.username == "admin"
+    assert sepal_headers.sepal_user.google_tokens
     assert sepal_headers.sepal_user.google_tokens.access_token
     assert sepal_headers.sepal_user.google_tokens.refresh_token
     assert sepal_headers.sepal_user.google_tokens.project_id == "ee-project"
