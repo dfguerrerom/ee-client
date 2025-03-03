@@ -187,7 +187,9 @@ class EESession:
             try:
                 async with self.get_client() as client:
                     url_with_project = self.set_url_project(url)
-                    logger.debug(f"Making async {method} request to {url_with_project}")
+                    logger.debug(
+                        f"Making async {method} request to {url_with_project} with data: {data}"
+                    )
                     response = await client.request(
                         method, url_with_project, json=data, params=params
                     )
