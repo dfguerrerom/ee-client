@@ -73,12 +73,13 @@ After initializing the session, use the ``operations`` property to access the ke
 
    import ee
 
-   # Initialize the Earth Engine library
+   # Initialize the Earth Engine library (this can use any authentication method/account)
+   # The purpose of this is to ensure the ee library is available for use
    ee.Initialize()
 
    # Use the operations available in the session
    result_info = session.operations.get_info(ee.Number(5))
-   print(result_info)
+   print(result_info) # the GEE server call is done using the custom EE client
 
    # Example: Generate a map ID for an Earth Engine image
    image = ee.Image('COPERNICUS/S2/20190726T104031_20190726T104035_T31TGL')
