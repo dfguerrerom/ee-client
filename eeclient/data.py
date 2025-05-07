@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional, Union
 
 from eeclient.exceptions import EERestException
 from eeclient.logger import logger
-from eeclient.typing import MapTileOptions
+from eeclient.models import MapTileOptions
 from eeclient.helpers import _get_ee_image, convert_asset_id_to_asset_name
 
 if TYPE_CHECKING:

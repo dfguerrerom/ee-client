@@ -1,19 +1,16 @@
-from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 import os
 import time
-import json
 import asyncio
 import httpx
 from contextlib import asynccontextmanager
-
 
 from eeclient.export.image import image_to_asset, image_to_drive
 from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.tasks import get_task, get_task_by_name, get_tasks
-from eeclient.typing import GEEHeaders, GoogleTokens, MapTileOptions, SepalHeaders
+from eeclient.models import GEEHeaders, GoogleTokens, MapTileOptions, SepalHeaders
 from eeclient.data import (
     create_folder,
     delete_asset,
@@ -49,7 +46,7 @@ class EESession:
         self.max_retries = 3
 
         self.enforce_project_id = enforce_project_id
-
+        logger.debug(str(sepal_headers))
         self.sepal_headers = SepalHeaders.model_validate(sepal_headers)
         self.sepal_session_id = self.sepal_headers.cookies["SEPAL-SESSIONID"]
         self.sepal_user_data = self.sepal_headers.sepal_user
@@ -61,12 +58,13 @@ class EESession:
         # if not I will get this error:
         # httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://danielg.sepal.io/api/user-files/listFiles/?path=%2F&extensions='
 
-    def _initialize_credentials(self):
+    def _initialize_credentials(self) -> None:
         """Initialize credentials from the initial Google tokens"""
         _google_tokens = self.sepal_user_data.google_tokens
 
         if not _google_tokens:
-            raise EEClientError("No google tokens found in the user data.")
+            # Get them with the sepal_session_id
+            return asyncio.run(self.set_credentials())
 
         self.expiry_date = _google_tokens.access_token_expiry_date
         self.project_id = _google_tokens.project_id

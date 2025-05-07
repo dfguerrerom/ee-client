@@ -4,48 +4,14 @@ import uuid
 import pytest
 import requests
 
-from eeclient.typing import GoogleTokens, SepalHeaders, SepalUser
+from eeclient.helpers import get_sepal_headers_from_auth
+from eeclient.models import SepalHeaders, SepalUser
 from eeclient.logger import logger
 
 
 @pytest.fixture(scope="session")
 def sepal_headers():
-    return _get_sepal_headers()
-
-
-def _get_sepal_headers():
-    sepal_user = os.getenv("LOCAL_SEPAL_USER")
-    sepal_password = os.getenv("LOCAL_SEPAL_PASSWORD")
-    sepal_host = os.getenv("SEPAL_HOST")
-    if not sepal_user or not sepal_password:
-        raise ValueError("SEPAL_USER and SEPAL_PASSWORD must be set")
-
-    # do the request with a basic auth
-    response = requests.get(
-        f"https://{sepal_host}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials",
-        auth=(sepal_user, sepal_password),
-        verify=False,
-    )
-    logger.debug(f"Initializing session with headers: {response.cookies}")
-    sepal_user = SepalUser(
-        id=1,
-        username=sepal_user,
-        google_tokens=GoogleTokens.model_validate(response.json()),
-        status="active",
-        roles=["USER"],
-        system_user=False,
-        admin=False,
-    )
-
-    # replace the project_id with the one from the environment
-    sepal_user.google_tokens.project_id = "sepal-ui-421413"
-
-    sepal_headers = {
-        "cookie": dict(response.cookies),
-        "sepal-user": sepal_user,
-    }
-
-    return SepalHeaders.model_validate(sepal_headers)
+    return get_sepal_headers_from_auth()
 
 
 @pytest.fixture()

@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 from pathlib import Path
@@ -12,14 +13,32 @@ RESET = "\033[0m"
 
 class CustomLogger:
     def __init__(
-        self, name: str, level: int = logging.DEBUG, module_color: str = BLUE_BG
+        self, name: str, level: int = logging.INFO, module_color: str = BLUE_BG
     ):
+        env_log_level_str = os.getenv(
+            "EE_CLIENT_LOG_LEVEL", logging.getLevelName(level)
+        ).upper()
+        try:
+            effective_level = logging.getLevelName(env_log_level_str)
+            if not isinstance(effective_level, int):
+                effective_level = level
+                print(
+                    f"Warning: Invalid EE_CLIENT_LOG_LEVEL '{env_log_level_str}'. Defaulting to {logging.getLevelName(level)}.",
+                    file=sys.stderr,
+                )
+        except ValueError:
+            effective_level = level
+            print(
+                f"Warning: Could not parse EE_CLIENT_LOG_LEVEL '{env_log_level_str}'. Defaulting to {logging.getLevelName(level)}.",
+                file=sys.stderr,
+            )
+
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(level)
+        self.logger.setLevel(effective_level)
 
         # Create a colored console handler.
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
+        console_handler.setLevel(effective_level)  # Also set handler level
 
         # Build the format string using the module_color for the logger's name.
         format_str = f"%(log_color)s%(asctime)s - {module_color}%(name)s{RESET} - %(levelname)s - %(message)s"

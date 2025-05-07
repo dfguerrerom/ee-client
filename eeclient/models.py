@@ -69,37 +69,17 @@ class GoogleTokens(BaseModel):
 
 
 class SepalUser(BaseModel):
-    id: int
     username: str
-    # Make it optional to catch missing tokens
+    id: Optional[int] = None
     google_tokens: Optional[GoogleTokens] = None
-    status: str
-    roles: List[str]
-    system_user: bool
-    admin: bool
+    status: Optional[str] = None
+    roles: Optional[List[str]] = None
+    system_user: Optional[bool] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
     )
-
-    @model_validator(mode="before")
-    def check_google_tokens_present(cls, values: dict) -> dict:
-        # Look for the token in both the field name and its alias
-        token_value = values.get("google_tokens") or values.get("googleTokens")
-        if not token_value:
-            raise EEClientError(
-                "Authentication required: Please authenticate via sepal. See https://docs.sepal.io/en/latest/setup/gee.html."
-            )
-        return values
-
-    @model_validator(mode="after")
-    def check_google_tokens(self) -> "SepalUser":
-        if not self.google_tokens:
-            raise EEClientError(
-                "Authentication required: Please authenticate via sepal. See https://docs.sepal.io/en/latest/setup/gee.html."
-            )
-        return self
 
 
 class SepalHeaders(BaseModel):
