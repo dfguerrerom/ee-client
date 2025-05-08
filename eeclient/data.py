@@ -1,10 +1,10 @@
 import asyncio
 from collections import defaultdict
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
 from eeclient.exceptions import EERestException
-from eeclient.logger import logger
 from eeclient.models import MapTileOptions
 from eeclient.helpers import _get_ee_image, convert_asset_id_to_asset_name
 
@@ -18,6 +18,8 @@ from ee.image import Image
 from ee.computedobject import ComputedObject
 
 from ee.data import TileFetcher
+
+logger = logging.getLogger("eeclient")
 
 
 async def get_map_id(

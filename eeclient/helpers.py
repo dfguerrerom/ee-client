@@ -2,7 +2,6 @@ import os
 import requests
 import logging
 from eeclient.models import SepalHeaders, SepalUser
-from eeclient.logger import logger
 from typing import Union
 
 from ee.imagecollection import ImageCollection
@@ -11,6 +10,8 @@ from ee.featurecollection import FeatureCollection
 from ee.image import Image
 from eeclient.models import MapTileOptions
 from ee.data import convert_asset_id_to_asset_name  # type: ignore: it will be imported from another moduel
+
+logger = logging.getLogger("eeclient")
 
 
 def _get_ee_image(

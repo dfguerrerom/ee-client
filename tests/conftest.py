@@ -1,12 +1,11 @@
-import os
+import logging
 import uuid
 
 import pytest
-import requests
 
 from eeclient.helpers import get_sepal_headers_from_auth
-from eeclient.models import SepalHeaders, SepalUser
-from eeclient.logger import logger
+
+logger = logging.getLogger("eeclient")
 
 
 @pytest.fixture(scope="session")
@@ -55,4 +54,4 @@ def hash() -> str:
 
 
 if __name__ == "__main__":
-    print(_get_sepal_headers())
+    print(get_sepal_headers_from_auth())

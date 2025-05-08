@@ -1,3 +1,4 @@
+import logging
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
@@ -7,7 +8,8 @@ from typing import List, Optional, Any
 from datetime import datetime
 
 from eeclient.exceptions import EERestException
-from eeclient.logger import logger
+
+logger = logging.getLogger("eeclient")
 
 
 class CamelCaseModel(BaseModel):

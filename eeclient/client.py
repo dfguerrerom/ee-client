@@ -4,10 +4,10 @@ import os
 import time
 import asyncio
 import httpx
+import logging
 from contextlib import asynccontextmanager
 
 from eeclient.export.image import image_to_asset, image_to_drive
-from eeclient.logger import logger
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.tasks import get_task, get_task_by_name, get_tasks
 from eeclient.models import GEEHeaders, GoogleTokens, MapTileOptions, SepalHeaders
@@ -20,6 +20,8 @@ from eeclient.data import (
     get_map_id,
 )
 from eeclient.export.table import table_to_asset, table_to_drive
+
+logger = logging.getLogger("eeclient")
 
 SEPAL_HOST = os.getenv("SEPAL_HOST")
 if not SEPAL_HOST:

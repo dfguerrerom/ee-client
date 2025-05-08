@@ -1,3 +1,4 @@
+import logging
 import ee
 
 ee.Initialize()
@@ -18,9 +19,9 @@ from eeclient.data import (
     list_assets_concurrently,
 )
 from eeclient.exceptions import EERestException
-from eeclient.logger import logger
 from eeclient.client import EESession
 
+logger = logging.getLogger("eeclient")
 sys.path.append("..")
 
 
