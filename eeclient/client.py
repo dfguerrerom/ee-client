@@ -23,14 +23,13 @@ from eeclient.export.table import table_to_asset, table_to_drive
 
 logger = logging.getLogger("eeclient")
 
-SEPAL_HOST = os.getenv("SEPAL_HOST")
-if not SEPAL_HOST:
-    raise ValueError("SEPAL_HOST environment variable not set")
+# Default values that won't raise exceptions during import
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha"
-SEPAL_API_DOWNLOAD_URL = f"https://{SEPAL_HOST}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
-VERIFY_SSL = not (
-    SEPAL_HOST == "host.docker.internal" or SEPAL_HOST == "danielg.sepal.io"
-)
+
+# These will be set properly when EESession is initialized
+SEPAL_HOST = os.getenv("SEPAL_HOST")
+SEPAL_API_DOWNLOAD_URL = None
+VERIFY_SSL = True
 
 
 class EESession:
@@ -41,11 +40,24 @@ class EESession:
 
         Args:
             sepal_headers (SepalHeaders): The headers sent by SEPAL
-            enforce_project_id (Optional[str], optional): If set, it cannot be changed. Defaults to None.
+            enforce_project_id (bool, optional): If set, it cannot be changed. Defaults to True.
 
+        Raises:
+            ValueError: If SEPAL_HOST environment variable is not set
         """
+        # Get and validate environment variables that are required for the session
+        self.sepal_host = os.getenv("SEPAL_HOST")
+        if not self.sepal_host:
+            raise ValueError("SEPAL_HOST environment variable not set")
+            
+        self.sepal_api_download_url = f"https://{self.sepal_host}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
+        self.verify_ssl = not (
+            self.sepal_host == "host.docker.internal" or self.sepal_host == "danielg.sepal.io"
+        )
+        
         self.expiry_date = 0
         self.max_retries = 3
+        self._credentials = None
 
         self.enforce_project_id = enforce_project_id
         logger.debug(str(sepal_headers))
@@ -125,7 +137,7 @@ class EESession:
             "Token is expired or about to expire; attempting to refresh credentials."
         )
         attempt = 0
-        credentials_url = SEPAL_API_DOWNLOAD_URL
+        credentials_url = self.sepal_api_download_url
 
         # Prepare cookies for authentication.
         sepal_cookies = httpx.Cookies()
@@ -138,7 +150,7 @@ class EESession:
             try:
                 async with httpx.AsyncClient(
                     cookies=sepal_cookies,
-                    verify=VERIFY_SSL,
+                    verify=self.verify_ssl,
                 ) as client:
                     logger.debug(f"Attempt {attempt} to refresh credentials.")
                     response = await client.get(credentials_url)
