@@ -1,6 +1,6 @@
 __title__ = "eeclient"
 __summary__ = "A client for Google Earth Engine"
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 
 __author__ = "Daniel Guerrero"
 __email__ = "dfgm2006@gmail.com"
