@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import TYPE_CHECKING, Optional, Union
-from pydantic import BaseModel, ConfigDict, model_validator, root_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:

@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from eeclient.client import EESession
@@ -55,9 +55,8 @@ class Task(CamelCaseModel):
     metadata: TaskMetadata
     done: Optional[bool] = None
     response: Optional[Response] = None
-    error: Optional[Any] = (
-        None  # Add error field which might be present instead of response
-    )
+    # Add error field which might be present instead of response
+    error: Optional[Any] = None
 
 
 class TasksResponse(CamelCaseModel):

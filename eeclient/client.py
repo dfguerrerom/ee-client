@@ -7,6 +7,7 @@ import httpx
 import logging
 from contextlib import asynccontextmanager
 
+from eeclient.export.table import table_to_asset, table_to_drive
 from eeclient.export.image import image_to_asset, image_to_drive
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.tasks import get_task, get_task_by_name, get_tasks
@@ -19,7 +20,6 @@ from eeclient.data import (
     get_info,
     get_map_id,
 )
-from eeclient.export.table import table_to_asset, table_to_drive
 
 logger = logging.getLogger("eeclient")
 
@@ -49,12 +49,13 @@ class EESession:
         self.sepal_host = os.getenv("SEPAL_HOST")
         if not self.sepal_host:
             raise ValueError("SEPAL_HOST environment variable not set")
-            
+
         self.sepal_api_download_url = f"https://{self.sepal_host}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
         self.verify_ssl = not (
-            self.sepal_host == "host.docker.internal" or self.sepal_host == "danielg.sepal.io"
+            self.sepal_host == "host.docker.internal"
+            or self.sepal_host == "danielg.sepal.io"
         )
-        
+
         self.expiry_date = 0
         self.max_retries = 3
         self._credentials = None
@@ -119,10 +120,14 @@ class EESession:
         """Context manager for an HTTP client using the current headers.
         A new client is created each time to ensure fresh headers."""
 
-        timeout = httpx.Timeout(connect=60.0, read=300.0, write=60.0, pool=60.0)
+        timeout = httpx.Timeout(connect=60.0, read=360.0, write=60.0, pool=60.0)
         headers = await self.get_headers()
         headers = headers.model_dump()  # type: ignore
-        async_client = httpx.AsyncClient(headers=headers, timeout=timeout)
+        # Increase connection pool limits to handle concurrent requests
+        limits = httpx.Limits(max_connections=100, max_keepalive_connections=50)
+        async_client = httpx.AsyncClient(
+            headers=headers, timeout=timeout, limits=limits
+        )
         try:
             yield async_client
         finally:
@@ -151,6 +156,9 @@ class EESession:
                 async with httpx.AsyncClient(
                     cookies=sepal_cookies,
                     verify=self.verify_ssl,
+                    limits=httpx.Limits(
+                        max_connections=100, max_keepalive_connections=50
+                    ),
                 ) as client:
                     logger.debug(f"Attempt {attempt} to refresh credentials.")
                     response = await client.get(credentials_url)
