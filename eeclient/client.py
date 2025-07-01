@@ -61,29 +61,52 @@ class EESession:
         self._credentials = None
 
         self.enforce_project_id = enforce_project_id
-        logger.debug(str(sepal_headers))
         self.sepal_headers = SepalHeaders.model_validate(sepal_headers)
         self.sepal_session_id = self.sepal_headers.cookies["SEPAL-SESSIONID"]
         self.sepal_user_data = self.sepal_headers.sepal_user
+        self.user = self.sepal_user_data.username
+
+        # Create user-specific logger
+        self.logger = logging.getLogger(f"eeclient.{self.user}")
 
         # Initialize credentials from the initial tokens
-        self._initialize_credentials()
+        self._google_tokens = self.sepal_user_data.google_tokens
+        if self._google_tokens:
+            self.expiry_date = self._google_tokens.access_token_expiry_date
+            self.project_id = self._google_tokens.project_id
+            self._credentials = self._google_tokens
+        else:
+            self._credentials = None
+            self.project_id = None
+            self.logger.debug(
+                "No credentials found in initial headers. Call initialize() or use create() to fetch credentials."
+            )
 
-        # Maybe do a test? and check that the session is valid
-        # if not I will get this error:
-        # httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://danielg.sepal.io/api/user-files/listFiles/?path=%2F&extensions='
+    async def initialize(self) -> "EESession":
+        """Asynchronously initialize the session by fetching credentials if needed.
 
-    def _initialize_credentials(self) -> None:
-        """Initialize credentials from the initial Google tokens"""
-        _google_tokens = self.sepal_user_data.google_tokens
+        This method can be called after creating a session to ensure it has valid credentials.
 
-        if not _google_tokens:
-            # Get them with the sepal_session_id
-            return asyncio.run(self.set_credentials())
+        Returns:
+            EESession: The initialized session (self)
+        """
+        if not self._credentials:
+            await self.set_credentials()
+        return self
 
-        self.expiry_date = _google_tokens.access_token_expiry_date
-        self.project_id = _google_tokens.project_id
-        self._credentials = _google_tokens
+    @classmethod
+    async def create(cls, sepal_headers: SepalHeaders, enforce_project_id: bool = True):
+        """Asynchronously create an EESession instance.
+
+        Args:
+            sepal_headers (SepalHeaders): The headers sent by SEPAL
+            enforce_project_id (bool, optional): If set, it cannot be changed. Defaults to True.
+
+        Returns:
+            EESession: An initialized session with valid credentials
+        """
+        session = cls(sepal_headers, enforce_project_id)
+        return await session.initialize()
 
     async def get_assets_folder(self) -> str:
         if self.is_expired():
@@ -99,7 +122,7 @@ class EESession:
         if not self._credentials:
             raise EEClientError("No credentials available")
 
-        logger.debug(f"Getting headers with project id: {self.project_id}")
+        self.logger.debug(f"Getting headers with project id: {self.project_id}")
 
         data = {
             "x-goog-user-project": self.project_id,
@@ -122,8 +145,8 @@ class EESession:
 
         timeout = httpx.Timeout(connect=60.0, read=360.0, write=60.0, pool=60.0)
         headers = await self.get_headers()
-        headers = headers.model_dump()  # type: ignore
-        # Increase connection pool limits to handle concurrent requests
+        # Use the model_dump with by_alias=True to keep the original HTTP header names
+        headers = headers.model_dump(by_alias=True)  # type: ignore
         limits = httpx.Limits(max_connections=100, max_keepalive_connections=50)
         async_client = httpx.AsyncClient(
             headers=headers, timeout=timeout, limits=limits
@@ -138,7 +161,7 @@ class EESession:
         Refresh credentials asynchronously.
         Uses its own HTTP client (thus bypassing get_headers) to avoid recursion.
         """
-        logger.debug(
+        self.logger.debug(
             "Token is expired or about to expire; attempting to refresh credentials."
         )
         attempt = 0
@@ -160,7 +183,7 @@ class EESession:
                         max_connections=100, max_keepalive_connections=50
                     ),
                 ) as client:
-                    logger.debug(f"Attempt {attempt} to refresh credentials.")
+                    self.logger.debug(f"Attempt {attempt} to refresh credentials.")
                     response = await client.get(credentials_url)
 
                 last_status = response.status_code
@@ -173,16 +196,16 @@ class EESession:
                         if self.enforce_project_id
                         else self.project_id
                     )
-                    logger.debug(
+                    self.logger.debug(
                         f"Successfully refreshed credentials !{self._credentials}==================. {self.project_id}"
                     )
                     return
                 else:
-                    logger.debug(
+                    self.logger.debug(
                         f"Attempt {attempt}/{self.max_retries} failed with status code: {response.status_code}."
                     )
             except Exception as e:
-                logger.error(
+                self.logger.error(
                     f"Attempt {attempt}/{self.max_retries} encountered an exception: {e}"
                 )
             await asyncio.sleep(2**attempt)  # Exponential backoff
@@ -203,12 +226,15 @@ class EESession:
     ) -> Dict[str, Any]:
         """Async REST call with retry logic"""
 
-        async def _make_request():
+        attempt = 0
+        last_error = None
+
+        while attempt < max_attempts:
             try:
                 async with self.get_client() as client:
                     url_with_project = self.set_url_project(url)
-                    logger.debug(
-                        f"Making async {method} request to {url_with_project} with data: {data}"
+                    self.logger.debug(
+                        f"Making async (asdf) {method} request to {url_with_project}"
                     )
                     response = await client.request(
                         method, url_with_project, json=data, params=params
@@ -219,56 +245,149 @@ class EESession:
                             "Content-Type", ""
                         ):
                             error_data = response.json().get("error", {})
-                            logger.error(f"Request failed with error: {error_data}")
+                            self.logger.error(
+                                f"Request failed with error: {error_data}"
+                            )
                             raise EERestException(error_data)
                         else:
                             error_data = {
                                 "code": response.status_code,
-                                "message": response.reason_phrase,
+                                "message": response.reason_phrase
+                                or "Unknown HTTP error",
+                                "status": response.status_code,
                             }
-                            logger.error(f"Request failed with error: {error_data}")
+                            self.logger.error(
+                                f"Request failed with HTTP error: {error_data}"
+                            )
                             raise EERestException(error_data)
 
-                    return response.json()
+                    try:
+                        return response.json()
+                    except Exception as e:
+                        self.logger.error(f"Error parsing JSON response: {str(e)}")
+                        self.logger.debug(f"Response content: {response.text[:500]}...")
+                        raise EERestException(
+                            {
+                                "code": 500,
+                                "message": f"Invalid JSON response: {str(e)}",
+                                "status": response.status_code,
+                            }
+                        )
 
             except EERestException as e:
-                return e
-
-        attempt = 0
-        while attempt < max_attempts:
-            result = await _make_request()
-            if isinstance(result, EERestException):
-                if result.code in [429, 401]:
-
-                    error = ""
+                last_error = e
+                if e.code in [429, 401, 503, 502, 504]:
+                    # Retry for rate limits, auth issues, and service unavailability
+                    error_type = (
+                        "Rate limit exceeded"
+                        if e.code == 429
+                        else "Unauthorized"
+                        if e.code == 401
+                        else "Service unavailable"
+                    )
                     attempt += 1
                     wait_time = min(initial_wait * (2**attempt), max_wait)
 
-                    if result.code == 429:
-                        error = "Rate limit exceeded"
-
-                    if result.code == 401:
-                        # This happens when the credentials change during the session
-                        error = "Unauthorized"
-                        await self.set_credentials()
-
-                    logger.debug(
-                        f"{error}. Attempt {attempt}/{max_attempts}. "
+                    self.logger.debug(
+                        f"{error_type}. Attempt {attempt}/{max_attempts}. "
                         f"Waiting {wait_time} seconds..."
                     )
-                    await asyncio.sleep(wait_time)
-                else:
-                    raise result
-            else:
-                return result
 
-        raise EERestException(
-            {
-                "code": 429,
-                "message": "Max retry attempts reached: "
-                + str(result.message),  # type: ignore
-            }
-        )
+                    if e.code == 401:
+                        await self.set_credentials()
+
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    self.logger.error(f"EERestException: {e}")
+                    raise
+
+            except httpx.HTTPError as e:
+                # Explicitly handle network-related errors
+                last_error = e
+                attempt += 1
+                wait_time = min(initial_wait * (2**attempt), max_wait)
+
+                error_type = type(e).__name__
+                self.logger.error(
+                    f"Network error ({error_type}) on attempt {attempt}/{max_attempts}: {str(e)}"
+                )
+
+                if isinstance(
+                    e,
+                    (
+                        httpx.ConnectTimeout,
+                        httpx.ReadTimeout,
+                        httpx.ConnectError,
+                        httpx.ReadError,
+                        httpx.WriteError,
+                        httpx.PoolTimeout,
+                    ),
+                ):
+                    self.logger.info(
+                        f"Transient network error, retrying in {wait_time} seconds"
+                    )
+                else:
+                    self.logger.warning(f"Non-transient network error: {str(e)}")
+
+                if attempt >= max_attempts:
+                    self.logger.error(
+                        f"Max retry attempts reached for network error: {str(e)}"
+                    )
+                    raise
+
+                await asyncio.sleep(wait_time)
+
+            except Exception as e:
+                last_error = e
+                error_type = type(e).__name__
+                self.logger.error(
+                    f"Unexpected error in rest_call ({error_type}): {str(e)}"
+                )
+
+                import traceback
+
+                self.logger.debug(f"Traceback: {traceback.format_exc()}")
+
+                # Only retry for potentially recoverable errors
+                if error_type in ["JSONDecodeError", "TimeoutError", "ConnectionError"]:
+                    attempt += 1
+                    wait_time = min(initial_wait * (2**attempt), max_wait)
+                    if attempt < max_attempts:
+                        self.logger.info(
+                            f"Potentially recoverable error, retrying in {wait_time} seconds"
+                        )
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                raise
+
+        # If we've reached here, we've exhausted all retries
+        if last_error is None:
+            # This should not happen normally but handle it defensively
+            raise EERestException(
+                {
+                    "code": 500,
+                    "message": "Max retry attempts reached with unknown error",
+                }
+            )
+        elif isinstance(last_error, EERestException):
+            if last_error.code in [429, 401]:
+                raise EERestException(
+                    {
+                        "code": last_error.code,
+                        "message": f"Max retry attempts reached: {last_error.message}",
+                    }
+                )
+            else:
+                raise last_error
+        else:
+            raise EERestException(
+                {
+                    "code": 500,
+                    "message": f"Max retry attempts reached: {str(last_error)}",
+                }
+            )
 
     def set_url_project(self, url: str) -> str:
         """Set the API URL with the project id"""
@@ -301,59 +420,55 @@ class _Operations:
             folder=folder,
         )
 
-    def get_info(self, ee_object=None, workloadTag=None, serialized_object=None):
-        return asyncio.run(
-            get_info(
-                self._session,
-                ee_object,
-                workloadTag,
-                serialized_object,
-            )
+    async def get_info(self, ee_object=None, workloadTag=None, serialized_object=None):
+        return await get_info(
+            self._session,
+            ee_object,
+            workloadTag,
+            serialized_object,
         )
 
-    def get_map_id(
+    async def get_map_id(
         self, ee_image, vis_params: MapTileOptions = {}, bands=None, format=None  # type: ignore
     ):
-        return asyncio.run(
-            get_map_id(self._session, ee_image, vis_params, bands, format)
-        )
+        return await get_map_id(self._session, ee_image, vis_params, bands, format)
 
-    def get_asset(self, asset_id: str, not_exists_ok: bool = False):
-        return asyncio.run(get_asset(self._session, asset_id, not_exists_ok))
+    async def get_asset(self, asset_id: str, not_exists_ok: bool = False):
+        return await get_asset(self._session, asset_id, not_exists_ok)
 
-    def create_folder(self, folder: str):
-        return asyncio.run(create_folder(self._session, folder))
+    async def create_folder(self, folder: str):
+        return await create_folder(self._session, folder)
 
-    def delete_asset(self, asset_id):
-        return asyncio.run(delete_asset(self._session, asset_id))
+    async def delete_asset(self, asset_id):
+        return await delete_asset(self._session, asset_id)
 
 
 class _Export:
     def __init__(self, session):
         self._session = session
 
-    def table_to_drive(self, collection, **kwargs):
-        return asyncio.run(table_to_drive(self._session, collection, **kwargs))
+    async def table_to_drive(self, collection, **kwargs):
+        return await table_to_drive(self._session, collection, **kwargs)
 
-    def table_to_asset(self, collection, **kwargs):
-        return asyncio.run(table_to_asset(self._session, collection, **kwargs))
+    async def table_to_asset(self, collection, **kwargs):
+        return await table_to_asset(self._session, collection, **kwargs)
 
-    def image_to_drive(self, image, **kwargs):
-        return asyncio.run(image_to_drive(self._session, image, **kwargs))
+    async def image_to_drive(self, image, **kwargs):
+        return await image_to_drive(self._session, image, **kwargs)
 
-    def image_to_asset(self, image, **kwargs):
-        return asyncio.run(image_to_asset(self._session, image, **kwargs))
+    async def image_to_asset(self, image, **kwargs):
+        return await image_to_asset(self._session, image, **kwargs)
 
 
 class _Tasks:
     def __init__(self, session):
         self._session = session
 
-    def get_tasks(self):
-        return asyncio.run(get_tasks(self._session))
+    async def get_tasks(self):
+        return await get_tasks(self._session)
 
-    def get_task(self, task_id):
-        return asyncio.run(get_task(self._session, task_id))
+    async def get_task(self, task_id):
+        return await get_task(self._session, task_id)
 
-    def get_task_by_name(self, asset_name):
-        return asyncio.run(get_task_by_name(self._session, asset_name))
+    async def get_task_by_name(self, asset_name):
+        return await get_task_by_name(self._session, asset_name)

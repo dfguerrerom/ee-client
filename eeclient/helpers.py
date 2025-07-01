@@ -9,9 +9,8 @@ from ee.feature import Feature
 from ee.featurecollection import FeatureCollection
 from ee.image import Image
 from eeclient.models import MapTileOptions
-from ee.data import convert_asset_id_to_asset_name  # type: ignore: it will be imported from another moduel
 
-logger = logging.getLogger("eeclient")
+log = logging.getLogger("eeclient")
 
 
 def _get_ee_image(
@@ -60,6 +59,7 @@ def parse_cookie_string(cookie_string):
 
 
 def get_sepal_headers_from_auth():
+    log.debug("Getting SEPAL headers from authentication")
     sepal_user = os.getenv("LOCAL_SEPAL_USER")
     sepal_password = os.getenv("LOCAL_SEPAL_PASSWORD")
     sepal_host = os.getenv("SEPAL_HOST")
@@ -84,13 +84,10 @@ def get_sepal_headers_from_auth():
 
     creds_response.raise_for_status()
 
-    logger.debug(f"Authentication successful. Cookies: {session.cookies}")
-    logger.debug(f"Response: {creds_response.json()}")
+    log.debug(f"Authentication successful. Cookies: {session.cookies}")
+    log.debug(f"Response>>>>>>>>>>: {creds_response.json()}")
 
     sepal_user_obj = SepalUser.model_validate(creds_response.json())
-
-    # Replace the project_id with the one from the environment
-    sepal_user_obj.google_tokens.project_id = "sepal-ui-421413"
 
     cookies_dict = {cookie.name: cookie.value for cookie in session.cookies}
 

@@ -58,9 +58,10 @@ async def get_map_id(
         "fileFormat": _cloud_api_utils.convert_to_image_file_format(format_),
         "bandIds": _cloud_api_utils.convert_to_band_list(bands),
     }
-
+    logger.debug(">>>>>>>>>>>Requesting map id")
     response = await client.rest_call("POST", url, data=request_body)
     map_name = response["name"]
+    logger.debug(f"Map name: {map_name}")
 
     _tile_base_url = "https://earthengine.googleapis.com"
     version = "v1"

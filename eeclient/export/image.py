@@ -8,6 +8,9 @@ if TYPE_CHECKING:
 
 from ee import serializer
 import ee
+import logging
+
+log = logging.getLogger("eeclient.export.image")
 
 
 class ImageFileFormat(str, Enum):
@@ -166,6 +169,8 @@ async def export_image(
 
     expression = serializer.encode(image, for_cloud_api=True)
     request_params["expression"] = expression
+
+    log.debug(f"Exporting image with params: {request_params}")
 
     url = "{earth_engine_api_url}/projects/{project}/image:export"
     return await client.rest_call("POST", url, data=request_params)
