@@ -16,7 +16,9 @@ try:
         CLIENT_SECRET = client_secrets["installed"]["client_secret"]
 except FileNotFoundError:
     print(
-        f"Error: client_secret.json not found at {CLIENT_SECRET_FILE}. Please set the CLIENT_SECRET_FILE environment variable or place the file in the same directory as this script."
+        f"Error: client_secret.json not found at {CLIENT_SECRET_FILE}. "
+        "Please set the CLIENT_SECRET_FILE environment variable or place "
+        "the file in the same directory as this script."
     )
     exit(1)  # Exit if the file isn't found
 
@@ -33,7 +35,11 @@ def index():
 
 
 def build_authorization_url():
-    authorization_url = f"{AUTHORIZATION_URL}?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope={' '.join(SCOPES)}&response_type=code&access_type=offline&prompt=consent"
+    authorization_url = (
+        f"{AUTHORIZATION_URL}?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+        f"&scope={' '.join(SCOPES)}&response_type=code&access_type=offline"
+        "&prompt=consent"
+    )
     return authorization_url
 
 

@@ -34,13 +34,15 @@ VERIFY_SSL = True
 
 class EESession:
     def __init__(self, sepal_headers: SepalHeaders, enforce_project_id: bool = True):
-        """Session that handles two scenarios to set the headers for the Earth Engine API
+        """Session that handles two scenarios to set the headers for Earth Engine API
 
-        It can be initialized with the headers sent by SEPAL or with the credentials and project
+        It can be initialized with the headers sent by SEPAL or with the
+        credentials and project
 
         Args:
             sepal_headers (SepalHeaders): The headers sent by SEPAL
-            enforce_project_id (bool, optional): If set, it cannot be changed. Defaults to True.
+            enforce_project_id (bool, optional): If set, it cannot be changed.
+                Defaults to True.
 
         Raises:
             ValueError: If SEPAL_HOST environment variable is not set
@@ -50,7 +52,10 @@ class EESession:
         if not self.sepal_host:
             raise ValueError("SEPAL_HOST environment variable not set")
 
-        self.sepal_api_download_url = f"https://{self.sepal_host}/api/user-files/download/?path=%2F.config%2Fearthengine%2Fcredentials"
+        self.sepal_api_download_url = (
+            f"https://{self.sepal_host}/api/user-files/download/"
+            "?path=%2F.config%2Fearthengine%2Fcredentials"
+        )
         self.verify_ssl = not (
             self.sepal_host == "host.docker.internal"
             or self.sepal_host == "danielg.sepal.io"
@@ -79,13 +84,15 @@ class EESession:
             self._credentials = None
             self.project_id = None
             self.logger.debug(
-                "No credentials found in initial headers. Call initialize() or use create() to fetch credentials."
+                "No credentials found in initial headers. "
+                "Call initialize() or use create() to fetch credentials."
             )
 
     async def initialize(self) -> "EESession":
         """Asynchronously initialize the session by fetching credentials if needed.
 
-        This method can be called after creating a session to ensure it has valid credentials.
+        This method can be called after creating a session to ensure it has
+        valid credentials.
 
         Returns:
             EESession: The initialized session (self)
@@ -100,7 +107,8 @@ class EESession:
 
         Args:
             sepal_headers (SepalHeaders): The headers sent by SEPAL
-            enforce_project_id (bool, optional): If set, it cannot be changed. Defaults to True.
+            enforce_project_id (bool, optional): If set, it cannot be changed.
+                Defaults to True.
 
         Returns:
             EESession: An initialized session with valid credentials
@@ -197,21 +205,25 @@ class EESession:
                         else self.project_id
                     )
                     self.logger.debug(
-                        f"Successfully refreshed credentials !{self._credentials}==================. {self.project_id}"
+                        f"Successfully refreshed credentials "
+                        f"!{self._credentials}==================. {self.project_id}"
                     )
                     return
                 else:
                     self.logger.debug(
-                        f"Attempt {attempt}/{self.max_retries} failed with status code: {response.status_code}."
+                        f"Attempt {attempt}/{self.max_retries} failed with "
+                        f"status code: {response.status_code}."
                     )
             except Exception as e:
                 self.logger.error(
-                    f"Attempt {attempt}/{self.max_retries} encountered an exception: {e}"
+                    f"Attempt {attempt}/{self.max_retries} "
+                    f"encountered an exception: {e}"
                 )
             await asyncio.sleep(2**attempt)  # Exponential backoff
 
         raise ValueError(
-            f"Failed to retrieve credentials after {self.max_retries} attempts, last status code: {last_status}"
+            f"Failed to retrieve credentials after {self.max_retries} attempts, "
+            f"last status code: {last_status}"
         )
 
     async def rest_call(
@@ -310,7 +322,8 @@ class EESession:
 
                 error_type = type(e).__name__
                 self.logger.error(
-                    f"Network error ({error_type}) on attempt {attempt}/{max_attempts}: {str(e)}"
+                    f"Network error ({error_type}) on attempt "
+                    f"{attempt}/{max_attempts}: {str(e)}"
                 )
 
                 if isinstance(
@@ -342,7 +355,7 @@ class EESession:
                 last_error = e
                 error_type = type(e).__name__
                 self.logger.error(
-                    f"Unexpected error in rest_call ({error_type}): {str(e)}"
+                    f"Unexpected error in rest_call ({error_type}): " f"{str(e)}"
                 )
 
                 import traceback
@@ -355,7 +368,8 @@ class EESession:
                     wait_time = min(initial_wait * (2**attempt), max_wait)
                     if attempt < max_attempts:
                         self.logger.info(
-                            f"Potentially recoverable error, retrying in {wait_time} seconds"
+                            f"Potentially recoverable error, retrying in "
+                            f"{wait_time} seconds"
                         )
                         await asyncio.sleep(wait_time)
                         continue
@@ -429,7 +443,11 @@ class _Operations:
         )
 
     async def get_map_id(
-        self, ee_image, vis_params: MapTileOptions = {}, bands=None, format=None  # type: ignore
+        self,
+        ee_image,
+        vis_params: MapTileOptions = {},  # type: ignore
+        bands=None,
+        format=None,
     ):
         return await get_map_id(self._session, ee_image, vis_params, bands, format)
 

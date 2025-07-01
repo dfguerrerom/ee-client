@@ -64,7 +64,8 @@ class TasksResponse(CamelCaseModel):
 
 
 async def get_tasks(client: "EESession") -> TasksResponse:
-    """Search for the described task in the user Task list return None if nothing is found.
+    """Search for the described task in the user Task list return None if
+    nothing is found.
 
     Args:
         task_descripsion: the task description
@@ -79,7 +80,8 @@ async def get_tasks(client: "EESession") -> TasksResponse:
 
 
 async def get_task(client: "EESession", task_id: str):
-    """Search for the described task in the user Task list return None if nothing is found.
+    """Search for the described task in the user Task list return None if
+    nothing is found.
 
     Args:
         task_descripsion: the task description
@@ -102,7 +104,8 @@ async def get_task(client: "EESession", task_id: str):
 
 
 async def get_task_by_name(client: "EESession", asset_name: str) -> Optional[Task]:
-    """Search for the described task in the user Task list return None if nothing is found.
+    """Search for the described task in the user Task list return None if
+    nothing is found.
 
     Args:
         task_descripsion: the task description

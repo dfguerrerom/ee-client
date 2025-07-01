@@ -120,7 +120,8 @@ async def get_asset(
     Args:
         client: The asynchronous session object.
         ee_asset_id: The asset id string.
-        not_exists_ok: Whether to return None if the asset is not found. Otherwise, raise an exception.
+        not_exists_ok: Whether to return None if the asset is not found.
+            Otherwise, raise an exception.
     Returns:
         The asset info or None if the asset is not found.
     """
@@ -274,7 +275,8 @@ async def delete_asset(client, asset_id: Union[str, Path]) -> None:
 async def delete_folder(
     client, folder_id: Union[str, Path], recursive: bool = False
 ) -> None:
-    """Delete a folder asset. If recursive is True, first delete all child assets asynchronously.
+    """Delete a folder asset. If recursive is True, first delete all child
+    assets asynchronously.
 
     Args:
         client: The Earth Engine session object.

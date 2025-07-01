@@ -11,12 +11,18 @@ class MapTileOptions(BaseModel):
     MapTileOptions defines the configuration for map tile generation.
 
     Attributes:
-        min (Union[str, List[str]]): Comma-separated numbers representing the values to map onto 00.
-        max (Union[str, List[str]]): Comma-separated numbers representing the values to map onto FF.
-        gain (Union[str, List[str]]): Comma-separated numbers representing the gain to map onto 00-FF.
-        bias (Union[str, List[str]]): Comma-separated numbers representing the offset to map onto 00-FF.
-        gamma (Union[str, List[str]]): Comma-separated numbers representing the gamma correction factor.
-        palette (str): A string of comma-separated CSS-style color strings (single-band previews only).
+        min (Union[str, List[str]]): Comma-separated numbers representing
+            the values to map onto 00.
+        max (Union[str, List[str]]): Comma-separated numbers representing
+            the values to map onto FF.
+        gain (Union[str, List[str]]): Comma-separated numbers representing
+            the gain to map onto 00-FF.
+        bias (Union[str, List[str]]): Comma-separated numbers representing
+            the offset to map onto 00-FF.
+        gamma (Union[str, List[str]]): Comma-separated numbers representing
+            the gamma correction factor.
+        palette (str): A string of comma-separated CSS-style color strings
+            (single-band previews only).
         format (str): The desired map tile format.
     """
 
@@ -51,7 +57,8 @@ class GoogleTokens(BaseModel):
         # Ensure that the project_id in google_tokens is provided
         if not self.project_id:
             raise EEClientError(
-                "No project ID found in the user data. Please authenticate select a project."
+                "No project ID found in the user data. "
+                "Please authenticate select a project."
             )
         return self
 
@@ -89,7 +96,8 @@ class SepalHeaders(BaseModel):
     @field_validator("cookies", mode="before")
     def parse_cookies(cls, v):
         """
-        Accepts a list of cookie strings or a single cookie string and converts them into a dictionary.
+        Accepts a list of cookie strings or a single cookie string and
+        converts them into a dictionary.
         Example input: ['SEPAL-SESSIONID=s:token; OTHERCOOKIE=foo;']
         """
         cookies = {}

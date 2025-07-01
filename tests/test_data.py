@@ -1,13 +1,13 @@
-import logging
-import ee
-
-ee.Initialize()
 import asyncio
-from pathlib import Path
+import logging
 import random
 import string
 import sys
+from pathlib import Path
+
 import pytest
+import ee
+
 from eeclient.data import (
     create_folder,
     delete_asset,
@@ -20,6 +20,8 @@ from eeclient.data import (
 )
 from eeclient.exceptions import EERestException
 from eeclient.client import EESession
+
+ee.Initialize()
 
 logger = logging.getLogger("eeclient")
 sys.path.append("..")

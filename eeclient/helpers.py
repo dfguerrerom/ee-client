@@ -9,6 +9,7 @@ from ee.feature import Feature
 from ee.featurecollection import FeatureCollection
 from ee.image import Image
 from eeclient.models import MapTileOptions
+from ee.data import convert_asset_id_to_asset_name  # noqa: F401
 
 log = logging.getLogger("eeclient")
 

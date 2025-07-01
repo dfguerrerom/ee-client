@@ -120,7 +120,9 @@ async def export_image(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
-    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,  # type: ignore
+    region: Union[
+        ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str
+    ] = None,  # type: ignore
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
@@ -158,7 +160,8 @@ async def export_image(
     )
     image_params = image_options.model_dump(by_alias=False, exclude_none=True)
 
-    # Do this to avoid set the region in the ExportOptions model, it cannot validate it...
+    # Do this to avoid set the region in the ExportOptions model,
+    # it cannot validate it...
     # TODO: check the error
     image_params["region"] = region
 
@@ -188,7 +191,9 @@ async def image_to_drive(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
-    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,  # type: ignore
+    region: Union[
+        ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str
+    ] = None,  # type: ignore
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
@@ -228,7 +233,9 @@ async def image_to_asset(
     request_id: Optional[str] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
-    region: Union[ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str] = None,  # type: ignore
+    region: Union[
+        ee.Geometry, ee.Geometry.LinearRing, ee.Geometry.Polygon, str
+    ] = None,  # type: ignore
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
