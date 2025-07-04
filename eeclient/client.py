@@ -7,18 +7,19 @@ import httpx
 import logging
 from contextlib import asynccontextmanager
 
-from eeclient.export.table import table_to_asset, table_to_drive
-from eeclient.export.image import image_to_asset, image_to_drive
 from eeclient.exceptions import EEClientError, EERestException
-from eeclient.tasks import get_task, get_task_by_name, get_tasks
-from eeclient.models import GEEHeaders, GoogleTokens, MapTileOptions, SepalHeaders
-from eeclient.data import (
-    create_folder,
-    delete_asset,
-    get_asset,
-    get_assets_async,
-    get_info,
-    get_map_id,
+from eeclient.models import GEEHeaders, GoogleTokens, SepalHeaders
+
+import eeclient.export as _export_module
+import eeclient.data as _operations_module
+import eeclient.tasks as _tasks_module
+
+from eeclient.interfaces import (
+    _ModuleProxy,
+    ExportProtocol,
+    OperationsProtocol,
+    TasksProtocol,
+    expose_module_methods,
 )
 
 logger = logging.getLogger("eeclient")
@@ -411,82 +412,18 @@ class EESession:
         )
 
     @property
-    def operations(self):
-        # Return an object that bundles operations, passing self as the session.
-        return _Operations(self)
+    def export(self) -> ExportProtocol:
+        return _ModuleProxy(self, _export_module)  # type: ignore
 
     @property
-    def export(self):
-        return _Export(self)
+    def operations(self) -> OperationsProtocol:
+        return _ModuleProxy(self, _operations_module)  # type: ignore
 
     @property
-    def tasks(self):
-        return _Tasks(self)
+    def tasks(self) -> TasksProtocol:
+        return _ModuleProxy(self, _tasks_module)  # type: ignore
 
 
-class _Operations:
-    def __init__(self, session):
-        self._session = session
-
-    async def get_assets_async(self, folder: str):
-        return await get_assets_async(
-            self._session,
-            folder=folder,
-        )
-
-    async def get_info(self, ee_object=None, workloadTag=None, serialized_object=None):
-        return await get_info(
-            self._session,
-            ee_object,
-            workloadTag,
-            serialized_object,
-        )
-
-    async def get_map_id(
-        self,
-        ee_image,
-        vis_params: MapTileOptions = {},  # type: ignore
-        bands=None,
-        format=None,
-    ):
-        return await get_map_id(self._session, ee_image, vis_params, bands, format)
-
-    async def get_asset(self, asset_id: str, not_exists_ok: bool = False):
-        return await get_asset(self._session, asset_id, not_exists_ok)
-
-    async def create_folder(self, folder: str):
-        return await create_folder(self._session, folder)
-
-    async def delete_asset(self, asset_id):
-        return await delete_asset(self._session, asset_id)
-
-
-class _Export:
-    def __init__(self, session):
-        self._session = session
-
-    async def table_to_drive(self, collection, **kwargs):
-        return await table_to_drive(self._session, collection, **kwargs)
-
-    async def table_to_asset(self, collection, **kwargs):
-        return await table_to_asset(self._session, collection, **kwargs)
-
-    async def image_to_drive(self, image, **kwargs):
-        return await image_to_drive(self._session, image, **kwargs)
-
-    async def image_to_asset(self, image, **kwargs):
-        return await image_to_asset(self._session, image, **kwargs)
-
-
-class _Tasks:
-    def __init__(self, session):
-        self._session = session
-
-    async def get_tasks(self):
-        return await get_tasks(self._session)
-
-    async def get_task(self, task_id):
-        return await get_task(self._session, task_id)
-
-    async def get_task_by_name(self, asset_name):
-        return await get_task_by_name(self._session, asset_name)
+expose_module_methods(_ModuleProxy, _export_module)
+expose_module_methods(_ModuleProxy, _operations_module)
+expose_module_methods(_ModuleProxy, _tasks_module)

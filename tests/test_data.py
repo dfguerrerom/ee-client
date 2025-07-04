@@ -16,7 +16,7 @@ from eeclient.data import (
     get_assets_async,
     get_info,
     get_map_id,
-    list_assets_concurrently,
+    _list_assets_concurrently,
 )
 from eeclient.exceptions import EERestException
 from eeclient.client import EESession
@@ -155,7 +155,7 @@ async def test_list_assets_concurrently(sepal_headers):
     # Wait a moment for propagation.
     await asyncio.sleep(2)
     folders = [folder_id]
-    assets_lists = await list_assets_concurrently(session, folders)
+    assets_lists = await _list_assets_concurrently(session, folders)
     assert isinstance(assets_lists, list)
 
     # Depending on your project, the list might be empty or not.

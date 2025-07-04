@@ -62,7 +62,7 @@ class ExportOptions(BaseExportModel):
     # See the api: https://developers.google.com/earth-engine/reference/rest/v1alpha/projects.table/export#TableFileExportOptions
 
 
-async def export_table(
+async def _export_table(
     client: "EESession",
     collection,
     *,
@@ -110,7 +110,7 @@ async def export_table(
     return await client.rest_call("POST", url, data=params)
 
 
-async def table_to_drive(
+async def table_to_drive_async(
     client: "EESession",
     collection,
     filename_prefix: str,
@@ -129,7 +129,7 @@ async def table_to_drive(
         file_format=file_format, drive_destination=drive_destination
     )
 
-    return await export_table(
+    return await _export_table(
         client=client,
         collection=collection,
         drive_options=drive_options,
@@ -140,7 +140,7 @@ async def table_to_drive(
     )
 
 
-async def table_to_asset(
+async def table_to_asset_async(
     client: "EESession",
     collection,
     asset_id: str,
@@ -156,7 +156,7 @@ async def table_to_asset(
         earth_engine_destination=EarthEngineDestination(name=asset_id)
     )
 
-    return await export_table(
+    return await _export_table(
         client=client,
         collection=collection,
         asset_options=asset_options,
@@ -165,3 +165,12 @@ async def table_to_asset(
         max_vertices=max_vertices,
         priority=priority,
     )
+
+
+# Backward compatibility aliases
+async def table_to_drive(*args, **kwargs):
+    return await table_to_drive_async(*args, **kwargs)
+
+
+async def table_to_asset(*args, **kwargs):
+    return await table_to_asset_async(*args, **kwargs)

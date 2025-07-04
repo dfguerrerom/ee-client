@@ -22,7 +22,7 @@ from ee.data import TileFetcher
 logger = logging.getLogger("eeclient")
 
 
-async def get_map_id(
+async def get_map_id_async(
     client: "EESession",
     ee_image: Image,
     vis_params: Union[dict, MapTileOptions] = {},
@@ -74,7 +74,7 @@ async def get_map_id(
     }
 
 
-async def get_info(
+async def get_info_async(
     client: "EESession",
     ee_object: Union[ComputedObject, None] = None,
     workloadTag=None,
@@ -110,7 +110,7 @@ async def get_info(
     return response["result"]
 
 
-async def get_asset(
+async def get_asset_async(
     client: "EESession", asset_id: str, not_exists_ok: bool = True
 ) -> Optional[dict]:
     """Async version of get_asset.
@@ -144,7 +144,7 @@ async def get_asset(
         raise
 
 
-async def list_assets_concurrently(client: "EESession", folders):
+async def _list_assets_concurrently(client: "EESession", folders):
     """List assets concurrently.
 
     Args:
@@ -182,7 +182,7 @@ async def get_assets_async(client: "EESession", folder: str = "") -> List[dict]:
         current_folders = [
             await folder_queue.get() for _ in range(folder_queue.qsize())
         ]
-        assets_groups = await list_assets_concurrently(client, current_folders)
+        assets_groups = await _list_assets_concurrently(client, current_folders)
 
         for assets in assets_groups:
             for asset in assets:
@@ -195,7 +195,7 @@ async def get_assets_async(client: "EESession", folder: str = "") -> List[dict]:
     return asset_list
 
 
-async def create_folder(client: "EESession", folder: Union[Path, str]) -> str:
+async def create_folder_async(client: "EESession", folder: Union[Path, str]) -> str:
     """Create a folder and its parents in Earth Engine if they don't exist.
 
     Args:
@@ -217,7 +217,7 @@ async def create_folder(client: "EESession", folder: Union[Path, str]) -> str:
 
     full_path = str(await client.get_assets_folder() / Path(folder))
 
-    if asset := await get_asset(client, full_path):
+    if asset := await get_asset_async(client, full_path):
         logger.debug(f"Folder already exists: {full_path}")
         return full_path
 
@@ -232,7 +232,7 @@ async def create_folder(client: "EESession", folder: Union[Path, str]) -> str:
         folder_id = f"projects/{{project}}/assets/{current}"
 
         logger.debug(f"Checking if folder exists: {current}, {folder_id}")
-        asset = await get_asset(client, folder_id)
+        asset = await get_asset_async(client, folder_id)
         if asset:
             continue
         else:
@@ -251,7 +251,7 @@ async def create_folder(client: "EESession", folder: Union[Path, str]) -> str:
     return full_path
 
 
-async def delete_asset(client, asset_id: Union[str, Path]) -> None:
+async def delete_asset_async(client, asset_id: Union[str, Path]) -> None:
     """Delete an asset from Earth Engine."""
 
     asset_id = str(asset_id)
@@ -272,7 +272,7 @@ async def delete_asset(client, asset_id: Union[str, Path]) -> None:
         raise
 
 
-async def delete_folder(
+async def delete_folder_async(
     client, folder_id: Union[str, Path], recursive: bool = False
 ) -> None:
     """Delete a folder asset. If recursive is True, first delete all child
@@ -297,13 +297,38 @@ async def delete_folder(
             # Process deletion from the deepest assets to the shallowest.
             for depth in sorted(depth_to_assets.keys(), reverse=True):
                 tasks = [
-                    asyncio.create_task(delete_asset(client, asset["id"]))
+                    asyncio.create_task(delete_asset_async(client, asset["id"]))
                     for asset in depth_to_assets[depth]
                 ]
                 # Await deletion of all assets at the current depth level.
                 await asyncio.gather(*tasks)
                 logger.info(f"Deleted all assets at depth {depth}")
 
-        await delete_asset(client, folder_id)
+        await delete_asset_async(client, folder_id)
     else:
-        await delete_asset(client, folder_id)
+        await delete_asset_async(client, folder_id)
+
+
+# Backward compatibility aliases
+async def get_map_id(*args, **kwargs):
+    return await get_map_id_async(*args, **kwargs)
+
+
+async def get_info(*args, **kwargs):
+    return await get_info_async(*args, **kwargs)
+
+
+async def get_asset(*args, **kwargs):
+    return await get_asset_async(*args, **kwargs)
+
+
+async def create_folder(*args, **kwargs):
+    return await create_folder_async(*args, **kwargs)
+
+
+async def delete_asset(*args, **kwargs):
+    return await delete_asset_async(*args, **kwargs)
+
+
+async def delete_folder(*args, **kwargs):
+    return await delete_folder_async(*args, **kwargs)

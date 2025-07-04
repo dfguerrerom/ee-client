@@ -79,6 +79,7 @@ class PixelGrid(BaseModel):
 
     @model_validator(mode="before")
     def check_crs_exclusivity(cls, values):
+        log.debug(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> {values}")
         crs_code = values.get("crs_code")
         crs_wkt = values.get("crs_wkt")
         if crs_code is not None and crs_wkt is not None:
@@ -108,7 +109,7 @@ class ExtraExportOptions(BaseExportModel):
     # TODO I didn't add dimensions...
 
 
-async def export_image(
+async def _export_image(
     client: "EESession",
     image,
     *,
@@ -179,7 +180,7 @@ async def export_image(
     return await client.rest_call("POST", url, data=request_params)
 
 
-async def image_to_drive(
+async def image_to_drive_async(
     client: "EESession",
     image,
     filename_prefix: str = "",
@@ -206,7 +207,7 @@ async def image_to_drive(
         ),
     )
 
-    return await export_image(
+    return await _export_image(
         client=client,
         image=image,
         drive_options=drive_options,
@@ -223,7 +224,7 @@ async def image_to_drive(
     )
 
 
-async def image_to_asset(
+async def image_to_asset_async(
     client: "EESession",
     image,
     asset_id: str,
@@ -245,7 +246,7 @@ async def image_to_asset(
         earth_engine_destination=EarthEngineDestination(name=asset_id),
     )
 
-    return await export_image(
+    return await _export_image(
         client=client,
         image=image,
         asset_options=asset_options,
@@ -260,3 +261,12 @@ async def image_to_asset(
         crs=crs,
         crs_transform=crs_transform,
     )
+
+
+# Backward compatibility aliases
+async def image_to_drive(*args, **kwargs):
+    return await image_to_drive_async(*args, **kwargs)
+
+
+async def image_to_asset(*args, **kwargs):
+    return await image_to_asset_async(*args, **kwargs)

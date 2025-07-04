@@ -63,7 +63,7 @@ class TasksResponse(CamelCaseModel):
     operations: List[Task]
 
 
-async def get_tasks(client: "EESession") -> TasksResponse:
+async def get_tasks_async(client: "EESession") -> TasksResponse:
     """Search for the described task in the user Task list return None if
     nothing is found.
 
@@ -79,7 +79,7 @@ async def get_tasks(client: "EESession") -> TasksResponse:
     return operations_response
 
 
-async def get_task(client: "EESession", task_id: str):
+async def get_task_async(client: "EESession", task_id: str):
     """Search for the described task in the user Task list return None if
     nothing is found.
 
@@ -103,7 +103,9 @@ async def get_task(client: "EESession", task_id: str):
         raise e
 
 
-async def get_task_by_name(client: "EESession", asset_name: str) -> Optional[Task]:
+async def get_task_by_name_async(
+    client: "EESession", asset_name: str
+) -> Optional[Task]:
     """Search for the described task in the user Task list return None if
     nothing is found.
 
@@ -113,8 +115,21 @@ async def get_task_by_name(client: "EESession", asset_name: str) -> Optional[Tas
     Returns:
         return the found task else None
     """
-    operations_response = await get_tasks(client)
+    operations_response = await get_tasks_async(client)
     for task in operations_response.operations:
         if task.metadata.description == asset_name:
             return task
     return None
+
+
+# Backward compatibility aliases
+async def get_tasks(*args, **kwargs):
+    return await get_tasks_async(*args, **kwargs)
+
+
+async def get_task(*args, **kwargs):
+    return await get_task_async(*args, **kwargs)
+
+
+async def get_task_by_name(*args, **kwargs):
+    return await get_task_by_name_async(*args, **kwargs)
