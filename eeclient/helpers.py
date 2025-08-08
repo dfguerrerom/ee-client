@@ -2,7 +2,7 @@ import os
 import requests
 import logging
 from eeclient.models import SepalHeaders, SepalUser
-from typing import Union
+from typing import Optional, Union
 
 from ee.imagecollection import ImageCollection
 from ee.feature import Feature
@@ -59,11 +59,17 @@ def parse_cookie_string(cookie_string):
     return cookies
 
 
-def get_sepal_headers_from_auth():
+def get_sepal_headers_from_auth(
+    sepal_user: Optional[str] = None,
+    sepal_password: Optional[str] = None,
+    sepal_host: Optional[str] = None,
+) -> SepalHeaders:
+
     log.debug("Getting SEPAL headers from authentication")
-    sepal_user = os.getenv("LOCAL_SEPAL_USER")
-    sepal_password = os.getenv("LOCAL_SEPAL_PASSWORD")
-    sepal_host = os.getenv("SEPAL_HOST")
+
+    sepal_user = sepal_user or os.getenv("LOCAL_SEPAL_USER")
+    sepal_password = sepal_password or os.getenv("LOCAL_SEPAL_PASSWORD")
+    sepal_host = sepal_host or os.getenv("SEPAL_HOST")
 
     if not sepal_user or not sepal_password or not sepal_host:
         raise ValueError(
