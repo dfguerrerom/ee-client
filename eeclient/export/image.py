@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 from ee import serializer
 import ee
 import logging
+from eeclient.tasks import Task
 
 log = logging.getLogger("eeclient.export.image")
 
@@ -127,11 +128,14 @@ async def _export_image(
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
-) -> dict:
+) -> Task:
     """
-    Export a table to either Google Drive or Earth Engine Asset.
+    Export an image to either Google Drive or Earth Engine Asset.
 
     Exactly one of drive_options or asset_options must be provided.
+
+    Returns:
+        Task: The export task response from the API
     """
     if (drive_options is None and asset_options is None) or (
         drive_options is not None and asset_options is not None
@@ -177,7 +181,8 @@ async def _export_image(
     log.debug(f"Exporting image with params: {request_params}")
 
     url = "{earth_engine_api_url}/projects/{project}/image:export"
-    return await client.rest_call("POST", url, data=request_params)
+    response_data = await client.rest_call("POST", url, data=request_params)
+    return Task.model_validate(response_data)
 
 
 async def image_to_drive_async(
@@ -198,8 +203,12 @@ async def image_to_drive_async(
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
-) -> dict:
-    """Abstracts the export of an image to Google Drive."""
+) -> Task:
+    """Abstracts the export of an image to Google Drive.
+
+    Returns:
+        Task: The export task response from the API
+    """
     drive_options = DriveOptions(
         file_format=file_format,
         drive_destination=DriveDestination(
@@ -240,8 +249,12 @@ async def image_to_asset_async(
     scale: Optional[float] = None,
     crs: Optional[str] = None,
     crs_transform: Optional[AffineTransform] = None,
-) -> dict:
-    """Abstracts the export of an image to Earth Engine Asset."""
+) -> Task:
+    """Abstracts the export of an image to Earth Engine Asset.
+
+    Returns:
+        Task: The export task response from the API
+    """
     asset_options = AssetOptions(
         earth_engine_destination=EarthEngineDestination(name=asset_id),
     )

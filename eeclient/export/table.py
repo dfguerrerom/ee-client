@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from eeclient.client import EESession
 
 from ee import serializer, encodable
+from eeclient.tasks import Task
 
 
 class TableFileFormat(str, Enum):
@@ -75,11 +76,14 @@ async def _export_table(
     max_vertices: Optional[int] = None,
     workload_tag: Optional[str] = None,
     priority: Optional[int] = None,
-) -> dict:
+) -> Task:
     """
     Export a table to either Google Drive or Earth Engine Asset.
 
     Exactly one of drive_options or asset_options must be provided.
+
+    Returns:
+        Task: The export task response from the API
     """
     if (drive_options is None and asset_options is None) or (
         drive_options is not None and asset_options is not None
@@ -107,24 +111,30 @@ async def _export_table(
     params = export_options.model_dump(by_alias=True, exclude_none=True)
 
     url = "{earth_engine_api_url}/projects/{project}/table:export"
-    return await client.rest_call("POST", url, data=params)
+    response_data = await client.rest_call("POST", url, data=params)
+    return Task.model_validate(response_data)
 
 
 async def table_to_drive_async(
     client: "EESession",
     collection,
-    filename_prefix: str,
     file_format: TableFileFormat,
+    filename_prefix: str = "",
     folder: Optional[str] = None,
     description: str = "myExportTableTask",
     selectors: Optional[list] = None,
     max_vertices: Optional[int] = None,
     priority: Optional[int] = None,
-) -> dict:
+) -> Task:
     """
     Export a table to Google Drive.
+
+    Returns:
+        Task: The export task response from the API
     """
-    drive_destination = DriveDestination(filename_prefix=filename_prefix, folder=folder)
+    drive_destination = DriveDestination(
+        filename_prefix=filename_prefix or description, folder=folder
+    )
     drive_options = DriveOptions(
         file_format=file_format, drive_destination=drive_destination
     )
@@ -148,9 +158,12 @@ async def table_to_asset_async(
     selectors: Optional[list] = None,
     max_vertices: Optional[int] = None,
     priority: Optional[int] = None,
-) -> dict:
+) -> Task:
     """
     Export a table to Earth Engine Asset.
+
+    Returns:
+        Task: The export task response from the API
     """
     asset_options = AssetOptions(
         earth_engine_destination=EarthEngineDestination(name=asset_id)
