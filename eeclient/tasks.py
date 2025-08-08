@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from eeclient.client import EESession
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from typing import List, Optional, Any
 from datetime import datetime
 
@@ -31,7 +31,7 @@ class Stage(CamelCaseModel):
 
 class TaskMetadata(CamelCaseModel):
     type_info: str = Field(alias="@type")
-    state: str
+    state: Optional[str] = None
     description: str
     priority: int
     create_time: datetime
@@ -40,7 +40,7 @@ class TaskMetadata(CamelCaseModel):
     end_time: Optional[datetime] = None
     type: str
     destination_uris: Optional[List[str]] = None
-    attempt: int
+    attempt: Optional[int] = None
     progress: Optional[float] = None
     stages: Optional[List[Stage]] = None
     batch_eecu_usage_seconds: Optional[float] = None
@@ -55,8 +55,19 @@ class Task(CamelCaseModel):
     metadata: TaskMetadata
     done: Optional[bool] = None
     response: Optional[Response] = None
-    # Add error field which might be present instead of response
     error: Optional[Any] = None
+
+    @computed_field
+    @property
+    def id(self) -> str:
+        """Extract the task ID from the name field.
+
+        The name field has format: 'projects/{project}/operations/{task_id}'
+        This property extracts just the {task_id} part.
+        """
+        if "/operations/" in self.name:
+            return self.name.split("/operations/")[-1]
+        return self.name
 
 
 class TasksResponse(CamelCaseModel):
@@ -79,7 +90,7 @@ async def get_tasks_async(client: "EESession") -> TasksResponse:
     return operations_response
 
 
-async def get_task_async(client: "EESession", task_id: str):
+async def get_task_async(client: "EESession", task_id: str) -> Optional[Task]:
     """Search for the described task in the user Task list return None if
     nothing is found.
 
