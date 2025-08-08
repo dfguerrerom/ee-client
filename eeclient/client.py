@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.models import GEEHeaders, GoogleTokens, SepalHeaders
+from eeclient.sepal_credential_mixin import SepalCredentialMixin
 
 import eeclient.export as _export_module
 import eeclient.data as _operations_module
@@ -33,7 +34,7 @@ SEPAL_API_DOWNLOAD_URL = None
 VERIFY_SSL = True
 
 
-class EESession:
+class EESession(SepalCredentialMixin):
     def __init__(self, sepal_headers: SepalHeaders, enforce_project_id: bool = True):
         """Session that handles two scenarios to set the headers for Earth Engine API
 
@@ -48,38 +49,17 @@ class EESession:
         Raises:
             ValueError: If SEPAL_HOST environment variable is not set
         """
-        # Get and validate environment variables that are required for the session
-        self.sepal_host = os.getenv("SEPAL_HOST")
-        if not self.sepal_host:
-            raise ValueError("SEPAL_HOST environment variable not set")
+        super().__init__(sepal_headers)
 
-        self.sepal_api_download_url = (
-            f"https://{self.sepal_host}/api/user-files/download/"
-            "?path=%2F.config%2Fearthengine%2Fcredentials"
-        )
-        self.verify_ssl = not (
-            self.sepal_host == "host.docker.internal"
-            or self.sepal_host == "danielg.sepal.io"
-        )
-
-        self.expiry_date = 0
         self.max_retries = 3
         self._credentials = None
-
         self.enforce_project_id = enforce_project_id
-        self.sepal_headers = SepalHeaders.model_validate(sepal_headers)
-        self.sepal_session_id = self.sepal_headers.cookies["SEPAL-SESSIONID"]
-        self.sepal_user_data = self.sepal_headers.sepal_user
-        self.user = self.sepal_user_data.username
 
         # Create user-specific logger
         self.logger = logging.getLogger(f"eeclient.{self.user}")
 
         # Initialize credentials from the initial tokens
-        self._google_tokens = self.sepal_user_data.google_tokens
         if self._google_tokens:
-            self.expiry_date = self._google_tokens.access_token_expiry_date
-            self.project_id = self._google_tokens.project_id
             self._credentials = self._google_tokens
         else:
             self._credentials = None
@@ -118,13 +98,17 @@ class EESession:
         return await session.initialize()
 
     async def get_assets_folder(self) -> str:
-        if self.is_expired():
+        if self.needs_credentials_refresh():
             await self.set_credentials()
         return f"projects/{self.project_id}/assets/"
 
     def is_expired(self) -> bool:
         """Returns if a token is about to expire"""
         return (self.expiry_date / 1000) - time.time() < 60
+
+    def needs_credentials_refresh(self) -> bool:
+        """Returns if credentials need to be refreshed (missing or expired)"""
+        return not self._credentials or self.is_expired()
 
     def get_current_headers(self) -> GEEHeaders:
         """Get current headers without refreshing credentials"""
@@ -143,7 +127,7 @@ class EESession:
 
     async def get_headers(self) -> GEEHeaders:
         """Async method to get headers, refreshing credentials if needed"""
-        if self.is_expired():
+        if self.needs_credentials_refresh():
             await self.set_credentials()
         return self.get_current_headers()
 
@@ -246,9 +230,12 @@ class EESession:
             try:
                 async with self.get_client() as client:
                     url_with_project = self.set_url_project(url)
-                    self.logger.debug(
-                        f"Making async (asdf) {method} request to {url_with_project}"
-                    )
+
+                    if "assets" not in url_with_project:
+                        # Do not log assets requests
+                        self.logger.debug(
+                            f"Making async  {method} request to {url_with_project}"
+                        )
                     response = await client.request(
                         method, url_with_project, json=data, params=params
                     )
