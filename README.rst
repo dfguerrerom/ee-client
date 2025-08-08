@@ -1,15 +1,22 @@
 Earth Engine Client 🌎
 ==============================
 
-The **Earth Engine Session Client** is a Python package that extends the Google Earth Engine (GEE) API by introducing multi-user session management through a custom authentication. Unlike the standard GEE API—which relies on a global session object and does not support multi-user environments—this client ensures that each session is authenticated and managed independently.
+The **Earth Engine Session Client** is a Python package that extends the Google Earth Engine (GEE) API by introducing multi-user session management through custom authentication. 
+
+**Why This Package?**
+
+While Google Earth Engine applications can be created using a global service account, this approach has significant limitations: users cannot access their private GEE assets without making them public. This package solves this problem by handling custom authentication, allowing each user to access their own private assets securely.
+
+Unlike the standard GEE API—which relies on a global session object and does not support multi-user environments—this client ensures that each session is authenticated and managed independently with user-specific credentials.
 
 Each session is instantiated via the ``EESession`` class, currently only accepts SEPAL headers as its only parameter. **A valid ``sepal-session-id`` cookie must be present in these headers**, as it is used to retrieve the corresponding GEE credentials. Once authenticated, the session exposes an ``operations`` property that provides easy access to key API methods.
 
 Key Features
 ------------
 
+- **Custom User Authentication**: Enable users to access their private GEE assets without requiring them to be public, solving the limitation of global service account approaches.
 - **SEPAL-based Initialization**: Create sessions using SEPAL headers. The required ``sepal-session-id`` cookie is automatically used to retrieve GEE credentials.
-- **Custom Session Management**: Encapsulate user-specific credentials and project data in an ``EESession`` object.
+- **Multi-User Session Management**: Encapsulate user-specific credentials and project data in independent ``EESession`` objects.
 - **Enhanced API Operations**: Access GEE functionalities via the ``operations`` property, which includes methods such as:
   - ``get_info``: Retrieve detailed information about an Earth Engine object.
   - ``get_map_id``: Generate a map ID for an Earth Engine image.
