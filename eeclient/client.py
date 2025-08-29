@@ -1,14 +1,13 @@
 from typing import Any, Dict, Literal, Optional
 
 import os
-import time
 import asyncio
 import httpx
 import logging
 from contextlib import asynccontextmanager
 
 from eeclient.exceptions import EEClientError, EERestException
-from eeclient.models import GEEHeaders, GoogleTokens, SepalHeaders
+from eeclient.models import GEEHeaders, SepalHeaders
 from eeclient.sepal_credential_mixin import SepalCredentialMixin
 
 import eeclient.export as _export_module
@@ -35,7 +34,11 @@ VERIFY_SSL = True
 
 
 class EESession(SepalCredentialMixin):
-    def __init__(self, sepal_headers: SepalHeaders, enforce_project_id: bool = True):
+    def __init__(
+        self,
+        sepal_headers: Optional[SepalHeaders] = None,
+        enforce_project_id: bool = True,
+    ):
         """Session that handles two scenarios to set the headers for Earth Engine API
 
         It can be initialized with the headers sent by SEPAL or with the
@@ -49,25 +52,20 @@ class EESession(SepalCredentialMixin):
         Raises:
             ValueError: If SEPAL_HOST environment variable is not set
         """
-        super().__init__(sepal_headers)
-
-        self.max_retries = 3
-        self._credentials = None
         self.enforce_project_id = enforce_project_id
+        super().__init__(sepal_headers)
 
         # Create user-specific logger
         self.logger = logging.getLogger(f"eeclient.{self.user}")
 
-        # Initialize credentials from the initial tokens
-        if self._google_tokens:
-            self._credentials = self._google_tokens
-        else:
-            self._credentials = None
-            self.project_id = None
-            self.logger.debug(
-                "No credentials found in initial headers. "
+        self.logger.debug(
+            "EESession initialized"
+            if self._credentials
+            else (
+                "EESession created without credentials. "
                 "Call initialize() or use create() to fetch credentials."
             )
+        )
 
     async def initialize(self) -> "EESession":
         """Asynchronously initialize the session by fetching credentials if needed.
@@ -83,11 +81,16 @@ class EESession(SepalCredentialMixin):
         return self
 
     @classmethod
-    async def create(cls, sepal_headers: SepalHeaders, enforce_project_id: bool = True):
+    async def create(
+        cls,
+        sepal_headers: Optional[SepalHeaders] = None,
+        enforce_project_id: bool = True,
+    ):
         """Asynchronously create an EESession instance.
 
         Args:
-            sepal_headers (SepalHeaders): The headers sent by SEPAL
+            sepal_headers (Optional[SepalHeaders]): The headers sent by SEPAL.
+                If None, will use file-based authentication.
             enforce_project_id (bool, optional): If set, it cannot be changed.
                 Defaults to True.
 
@@ -102,14 +105,6 @@ class EESession(SepalCredentialMixin):
             await self.set_credentials()
         return f"projects/{self.project_id}/assets/"
 
-    def is_expired(self) -> bool:
-        """Returns if a token is about to expire"""
-        return (self.expiry_date / 1000) - time.time() < 60
-
-    def needs_credentials_refresh(self) -> bool:
-        """Returns if credentials need to be refreshed (missing or expired)"""
-        return not self._credentials or self.is_expired()
-
     def get_current_headers(self) -> GEEHeaders:
         """Get current headers without refreshing credentials"""
         if not self._credentials:
@@ -117,10 +112,17 @@ class EESession(SepalCredentialMixin):
 
         self.logger.debug(f"Getting headers with project id: {self.project_id}")
 
+        # Get username based on authentication mode
+        username = (
+            self.sepal_user_data.username
+            if hasattr(self, "sepal_user_data") and self.sepal_user_data
+            else self.user
+        )
+
         data = {
             "x-goog-user-project": self.project_id,
             "Authorization": f"Bearer {self._credentials.access_token}",
-            "Username": self.sepal_user_data.username,
+            "Username": username,
         }
 
         return GEEHeaders.model_validate(data)
@@ -148,68 +150,6 @@ class EESession(SepalCredentialMixin):
             yield async_client
         finally:
             await async_client.aclose()
-
-    async def set_credentials(self) -> None:
-        """
-        Refresh credentials asynchronously.
-        Uses its own HTTP client (thus bypassing get_headers) to avoid recursion.
-        """
-        self.logger.debug(
-            "Token is expired or about to expire; attempting to refresh credentials."
-        )
-        attempt = 0
-        credentials_url = self.sepal_api_download_url
-
-        # Prepare cookies for authentication.
-        sepal_cookies = httpx.Cookies()
-        sepal_cookies.set("SEPAL-SESSIONID", self.sepal_session_id)
-
-        last_status = None
-
-        while attempt < self.max_retries:
-            attempt += 1
-            try:
-                async with httpx.AsyncClient(
-                    cookies=sepal_cookies,
-                    verify=self.verify_ssl,
-                    limits=httpx.Limits(
-                        max_connections=100, max_keepalive_connections=50
-                    ),
-                ) as client:
-                    self.logger.debug(f"Attempt {attempt} to refresh credentials.")
-                    response = await client.get(credentials_url)
-
-                last_status = response.status_code
-
-                if response.status_code == 200:
-                    self._credentials = GoogleTokens.model_validate(response.json())
-                    self.expiry_date = self._credentials.access_token_expiry_date
-                    self.project_id = (
-                        self._credentials.project_id
-                        if self.enforce_project_id
-                        else self.project_id
-                    )
-                    self.logger.debug(
-                        f"Successfully refreshed credentials "
-                        f"!{self._credentials}==================. {self.project_id}"
-                    )
-                    return
-                else:
-                    self.logger.debug(
-                        f"Attempt {attempt}/{self.max_retries} failed with "
-                        f"status code: {response.status_code}."
-                    )
-            except Exception as e:
-                self.logger.error(
-                    f"Attempt {attempt}/{self.max_retries} "
-                    f"encountered an exception: {e}"
-                )
-            await asyncio.sleep(2**attempt)  # Exponential backoff
-
-        raise ValueError(
-            f"Failed to retrieve credentials after {self.max_retries} attempts, "
-            f"last status code: {last_status}"
-        )
 
     async def rest_call(
         self,
@@ -343,7 +283,7 @@ class EESession(SepalCredentialMixin):
                 last_error = e
                 error_type = type(e).__name__
                 self.logger.error(
-                    f"Unexpected error in rest_call ({error_type}): " f"{str(e)}"
+                    f"Unexpected error in rest_call ({error_type}): {str(e)}"
                 )
 
                 import traceback
