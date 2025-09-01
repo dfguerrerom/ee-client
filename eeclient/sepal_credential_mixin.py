@@ -1,4 +1,9 @@
 from eeclient.models import SepalHeaders, GoogleTokens
+from eeclient.exceptions import (
+    CredentialsFileNotFoundError,
+    CredentialsFileUnknownError,
+    SepalCredentialsUnavailableError,
+)
 import os
 import logging
 import json
@@ -84,10 +89,14 @@ class SepalCredentialMixin:
     def _load_credentials_from_file(self):
         """Load credentials from file and update internal state"""
         if not self.credentials_path.exists():
-            raise ValueError(f"Credentials file not found at {self.credentials_path}")
+            raise CredentialsFileNotFoundError(str(self.credentials_path))
 
         try:
-            credentials_data = json.loads(self.credentials_path.read_text())
+            file_content = self.credentials_path.read_text().strip()
+            if not file_content:
+                raise CredentialsFileNotFoundError(str(self.credentials_path))
+
+            credentials_data = json.loads(file_content)
             self._credentials = GoogleTokens.model_validate(credentials_data)
             self.access_token = self._credentials.access_token
             self.project_id = self._credentials.project_id
@@ -166,6 +175,12 @@ class SepalCredentialMixin:
                         f"Project: {self.project_id}"
                     )
                     return
+                elif response.status_code == 500:
+                    self.logger.error(
+                        "SEPAL API returned 500 error - "
+                        "credentials not available on server"
+                    )
+                    raise SepalCredentialsUnavailableError(500)
                 else:
                     self.logger.debug(
                         f"Attempt {attempt}/{self.max_retries} failed with "
@@ -191,6 +206,8 @@ class SepalCredentialMixin:
         )
         attempt = 0
 
+        log.debug(f"Credentials path: {self.credentials_path}")
+
         while attempt < self.max_retries:
             attempt += 1
             try:
@@ -214,11 +231,17 @@ class SepalCredentialMixin:
                         f"Credentials from file are still expired."
                     )
 
+            except CredentialsFileNotFoundError:
+                self.logger.error(
+                    f"Credentials file not found: {self.credentials_path}"
+                )
+                raise
             except Exception as e:
                 self.logger.error(
                     f"Attempt {attempt}/{self.max_retries} "
                     f"encountered an exception while reading file: {e}"
                 )
+                raise
 
             # Wait before retrying (the file might be updated externally)
             if attempt < self.max_retries:
@@ -226,11 +249,7 @@ class SepalCredentialMixin:
                 self.logger.debug(f"Waiting {wait_time} seconds before retry...")
                 await asyncio.sleep(wait_time)
 
-        raise ValueError(
-            f"Failed to retrieve valid credentials from file after "
-            f"{self.max_retries} attempts. File may not be automatically "
-            f"updated or credentials are permanently expired."
-        )
+        raise CredentialsFileUnknownError()
 
     def set_credentials_sync(self) -> None:
         """
@@ -282,6 +301,13 @@ class SepalCredentialMixin:
                         f"Project: {self.project_id}"
                     )
                     return
+                elif response.status_code == 500:
+                    self.logger.error(
+                        "SEPAL API returned 500 error - "
+                        "credentials not available on server"
+                    )
+                    session.close()
+                    raise SepalCredentialsUnavailableError(500)
                 else:
                     self.logger.debug(
                         f"Attempt {attempt}/{self.max_retries} failed with "
@@ -336,6 +362,9 @@ class SepalCredentialMixin:
                         f"Credentials from file are still expired."
                     )
 
+            except CredentialsFileNotFoundError:
+                # Re-raise immediately - no point in retrying if file doesn't exist
+                raise
             except Exception as e:
                 self.logger.error(
                     f"Attempt {attempt}/{self.max_retries} "
