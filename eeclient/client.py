@@ -33,6 +33,23 @@ SEPAL_API_DOWNLOAD_URL = None
 VERIFY_SSL = True
 
 
+class SimpleRateLimiter:
+    def __init__(self, qps: float | None):
+        self.qps = qps
+        self._lock = asyncio.Lock()
+        self._next = 0.0
+
+    async def acquire(self):
+        if not self.qps or self.qps <= 0:
+            return
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            wait = max(0.0, self._next - now)
+            if wait:
+                await asyncio.sleep(wait)
+            self._next = max(now, self._next) + 1.0 / self.qps
+
+
 class EESession(SepalCredentialMixin):
     def __init__(
         self,
@@ -52,12 +69,18 @@ class EESession(SepalCredentialMixin):
         Raises:
             ValueError: If SEPAL_HOST environment variable is not set
         """
+        self._inflight = asyncio.BoundedSemaphore(30)
+        self._rate = SimpleRateLimiter(60)
+
+        self._auth_refresh_lock = asyncio.Lock()
+
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
+
         self.enforce_project_id = enforce_project_id
         super().__init__(sepal_headers)
 
-        # Create user-specific logger
         self.logger = logging.getLogger(f"eeclient.{self.user}")
-
         self.logger.debug(
             "EESession initialized"
             if self._credentials
@@ -127,29 +150,37 @@ class EESession(SepalCredentialMixin):
 
         return GEEHeaders.model_validate(data)
 
-    async def get_headers(self) -> GEEHeaders:
-        """Async method to get headers, refreshing credentials if needed"""
+    async def get_headers(self):
+        # Only one task refreshes the token; others wait briefly.
         if self.needs_credentials_refresh():
-            await self.set_credentials()
+            async with self._auth_refresh_lock:
+                if self.needs_credentials_refresh():  # double-check after lock
+                    await self.set_credentials()
         return self.get_current_headers()
+
+    async def _ensure_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            async with self._client_lock:
+                if self._client is None:
+                    self._client = httpx.AsyncClient(
+                        http2=True,
+                        timeout=httpx.Timeout(connect=60, read=360, write=60, pool=60),
+                        limits=httpx.Limits(
+                            max_connections=40, max_keepalive_connections=20
+                        ),
+                        verify=getattr(self, "verify_ssl", True),
+                    )
+        return self._client
 
     @asynccontextmanager
     async def get_client(self):
-        """Context manager for an HTTP client using the current headers.
-        A new client is created each time to ensure fresh headers."""
+        client = await self._ensure_client()
+        yield client
 
-        timeout = httpx.Timeout(connect=60.0, read=360.0, write=60.0, pool=60.0)
-        headers = await self.get_headers()
-        # Use the model_dump with by_alias=True to keep the original HTTP header names
-        headers = headers.model_dump(by_alias=True)  # type: ignore
-        limits = httpx.Limits(max_connections=100, max_keepalive_connections=50)
-        async_client = httpx.AsyncClient(
-            headers=headers, timeout=timeout, limits=limits
-        )
-        try:
-            yield async_client
-        finally:
-            await async_client.aclose()
+    async def aclose(self):
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     async def rest_call(
         self,
@@ -168,51 +199,61 @@ class EESession(SepalCredentialMixin):
 
         while attempt < max_attempts:
             try:
-                async with self.get_client() as client:
-                    url_with_project = self.set_url_project(url)
+                headers = (await self.get_headers()).model_dump(by_alias=True)
+                url_with_project = self.set_url_project(url)
 
-                    if "assets" not in url_with_project:
-                        # Do not log assets requests
-                        self.logger.debug(
-                            f"Making async  {method} request to {url_with_project}"
-                        )
-                    response = await client.request(
-                        method, url_with_project, json=data, params=params
-                    )
+                async with self._inflight:
+                    await self._rate.acquire()
+                    async with self.get_client() as client:
 
-                    if response.status_code >= 400:
-                        if "application/json" in response.headers.get(
-                            "Content-Type", ""
-                        ):
-                            error_data = response.json().get("error", {})
-                            self.logger.error(
-                                f"Request failed with error: {error_data}"
+                        if "assets" not in url_with_project:
+                            # Do not log assets requests
+                            self.logger.debug(
+                                f"Making async  {method} request to {url_with_project}"
                             )
-                            raise EERestException(error_data)
-                        else:
-                            error_data = {
-                                "code": response.status_code,
-                                "message": response.reason_phrase
-                                or "Unknown HTTP error",
-                                "status": response.status_code,
-                            }
-                            self.logger.error(
-                                f"Request failed with HTTP error: {error_data}"
-                            )
-                            raise EERestException(error_data)
-
-                    try:
-                        return response.json()
-                    except Exception as e:
-                        self.logger.error(f"Error parsing JSON response: {str(e)}")
-                        self.logger.debug(f"Response content: {response.text[:500]}...")
-                        raise EERestException(
-                            {
-                                "code": 500,
-                                "message": f"Invalid JSON response: {str(e)}",
-                                "status": response.status_code,
-                            }
+                        response = await client.request(
+                            method,
+                            url_with_project,
+                            json=data,
+                            params=params,
+                            headers=headers,
                         )
+
+                        if response.status_code >= 400:
+                            if "application/json" in response.headers.get(
+                                "Content-Type", ""
+                            ):
+                                error_data = response.json().get("error", {})
+                                self.logger.error(
+                                    f"Request failed with error: {error_data}"
+                                )
+                                raise EERestException(error_data)
+                            else:
+                                error_data = {
+                                    "code": response.status_code,
+                                    "message": response.reason_phrase
+                                    or "Unknown HTTP error",
+                                    "status": response.status_code,
+                                }
+                                self.logger.error(
+                                    f"Request failed with HTTP error: {error_data}"
+                                )
+                                raise EERestException(error_data)
+
+                        try:
+                            return response.json()
+                        except Exception as e:
+                            self.logger.error(f"Error parsing JSON response: {str(e)}")
+                            self.logger.debug(
+                                f"Response content: {response.text[:500]}..."
+                            )
+                            raise EERestException(
+                                {
+                                    "code": 500,
+                                    "message": f"Invalid JSON response: {str(e)}",
+                                    "status": response.status_code,
+                                }
+                            )
 
             except EERestException as e:
                 last_error = e

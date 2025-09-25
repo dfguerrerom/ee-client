@@ -12,7 +12,7 @@ authors = [
 ]
 dependencies = [
 	"earthengine-api",
-    "httpx",
+    "httpx[http2]",
     "aiogoogle",
     "tenacity",
     "pydantic",
