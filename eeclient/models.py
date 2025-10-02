@@ -141,6 +141,13 @@ class SepalHeaders(BaseModel):
                 raise ValueError("Invalid JSON string in sepal-user field") from e
         return v
 
+    @property
+    def session_id(self) -> Optional[str]:
+        """
+        Returns the SEPAL-SESSIONID cookie value if present.
+        """
+        return self.cookies.get("SEPAL-SESSIONID")
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
