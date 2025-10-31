@@ -167,32 +167,45 @@ async def _list_assets_concurrently(client: "EESession", folders):
 async def get_assets_async(client: "EESession", folder: str = "") -> List[dict]:
     """Get all assets in a folder recursively (async version).
 
+    Responses are cached for 10 seconds to prevent redundant API calls.
+    Concurrent requests with identical parameters are deduplicated.
+
     Args:
         client: The asynchronous session object.
         folder: The starting folder name or id.
 
     Returns:
-
+        List of assets with their type, name, and id.
     """
-    folder_queue = asyncio.Queue()
-    await folder_queue.put(folder)
-    asset_list = []
+    cache_key = client._assets_cache.make_cache_key(folder)
 
-    while not folder_queue.empty():
-        current_folders = [
-            await folder_queue.get() for _ in range(folder_queue.qsize())
-        ]
-        assets_groups = await _list_assets_concurrently(client, current_folders)
+    async def _fetch_assets():
+        folder_queue = asyncio.Queue()
+        await folder_queue.put(folder)
+        asset_list = []
 
-        for assets in assets_groups:
-            for asset in assets:
-                asset_list.append(
-                    {"type": asset["type"], "name": asset["name"], "id": asset["id"]}
-                )
-                if asset["type"] == "FOLDER":
-                    await folder_queue.put(asset["name"])
+        while not folder_queue.empty():
+            current_folders = [
+                await folder_queue.get() for _ in range(folder_queue.qsize())
+            ]
+            assets_groups = await _list_assets_concurrently(client, current_folders)
 
-    return asset_list
+            for assets in assets_groups:
+                for asset in assets:
+                    asset_list.append(
+                        {
+                            "type": asset["type"],
+                            "name": asset["name"],
+                            "id": asset["id"],
+                        }
+                    )
+                    if asset["type"] == "FOLDER":
+                        await folder_queue.put(asset["name"])
+
+        return asset_list
+
+    # Don't pass any arguments since _fetch_assets is a closure
+    return await client._assets_cache.get_or_fetch(cache_key, _fetch_assets)
 
 
 async def create_folder_async(client: "EESession", folder: Union[Path, str]) -> str:

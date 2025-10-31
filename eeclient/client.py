@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.models import GEEHeaders, SepalHeaders
 from eeclient.sepal_credential_mixin import SepalCredentialMixin
+from eeclient.cache import ResponseCache
 
 import eeclient.export as _export_module
 import eeclient.data as _operations_module
@@ -76,6 +77,8 @@ class EESession(SepalCredentialMixin):
 
         self._client: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
+
+        self._assets_cache = ResponseCache(ttl=10.0, max_size=100)
 
         self.enforce_project_id = enforce_project_id
         super().__init__(sepal_headers)
@@ -181,6 +184,7 @@ class EESession(SepalCredentialMixin):
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+        self._assets_cache.clear()
 
     async def rest_call(
         self,

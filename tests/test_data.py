@@ -158,9 +158,7 @@ async def test_list_assets_concurrently(sepal_headers):
     assets_lists = await _list_assets_concurrently(session, folders)
     assert isinstance(assets_lists, list)
 
-    # Depending on your project, the list might be empty or not.
     print(f"Assets listed: {assets_lists}")
-    # Clean up
     await delete_folder(session, folder_id=folder_id, recursive=True)
 
 

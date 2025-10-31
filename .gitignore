@@ -8,6 +8,7 @@ test*.ipynb
 config.json
 test_with_headers.ipynb
 .github/instructions/
+issues/
 
 # Distribution / packaging
 .Python
