@@ -6,7 +6,7 @@ import httpx
 import logging
 from contextlib import asynccontextmanager
 
-from eeclient.exceptions import EEClientError, EERestException
+from eeclient.exceptions import EEClientError, EELoopError, EERestException
 from eeclient.models import GEEHeaders, SepalHeaders
 from eeclient.sepal_credential_mixin import SepalCredentialMixin
 from eeclient.cache import ResponseCache
@@ -37,12 +37,19 @@ VERIFY_SSL = True
 class SimpleRateLimiter:
     def __init__(self, qps: float | None):
         self.qps = qps
+        self._lock: asyncio.Lock | None = None
+        self._next = 0.0
+
+    def _rebind(self):
+        """Create fresh loop-bound state for the current event loop."""
         self._lock = asyncio.Lock()
         self._next = 0.0
 
     async def acquire(self):
         if not self.qps or self.qps <= 0:
             return
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             now = asyncio.get_running_loop().time()
             wait = max(0.0, self._next - now)
@@ -70,14 +77,13 @@ class EESession(SepalCredentialMixin):
         Raises:
             ValueError: If SEPAL_HOST environment variable is not set
         """
-        self._inflight = asyncio.BoundedSemaphore(30)
+        # Loop-bound state -- created lazily by _ensure_bound()
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
+        self._inflight: asyncio.BoundedSemaphore | None = None
         self._rate = SimpleRateLimiter(60)
-
-        self._auth_refresh_lock = asyncio.Lock()
-
+        self._auth_refresh_lock: asyncio.Lock | None = None
         self._client: httpx.AsyncClient | None = None
-        self._client_lock = asyncio.Lock()
-
+        self._client_lock: asyncio.Lock | None = None
         self._assets_cache = ResponseCache(ttl=10.0, max_size=100)
 
         self.enforce_project_id = enforce_project_id
@@ -93,6 +99,61 @@ class EESession(SepalCredentialMixin):
             )
         )
 
+    _INFLIGHT_MAX = 30
+
+    def _has_active_work(self) -> bool:
+        """Return True if the session has any in-flight async activity."""
+        if self._inflight is not None and self._inflight._value < self._INFLIGHT_MAX:
+            return True
+        if self._assets_cache.has_pending_tasks():
+            return True
+        if self._client is not None and not self._client.is_closed:
+            return True
+        return False
+
+    def _bind(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Create all loop-bound async primitives for the given loop."""
+        self._bound_loop = loop
+        self._inflight = asyncio.BoundedSemaphore(self._INFLIGHT_MAX)
+        self._auth_refresh_lock = asyncio.Lock()
+        self._client_lock = asyncio.Lock()
+        self._client = None
+        self._rate._rebind()
+        self._assets_cache._rebind()
+
+    def _ensure_bound(self) -> None:
+        """Ensure the session is bound to the current event loop.
+
+        - First call: binds to the running loop.
+        - Same loop: no-op.
+        - Different loop, old loop idle: rebinds.
+        - Different loop, old loop busy: raises EELoopError.
+        """
+        loop = asyncio.get_running_loop()
+
+        if self._bound_loop is None:
+            self._bind(loop)
+            return
+
+        if self._bound_loop is loop:
+            return
+
+        # Different loop detected -- check whether rebinding is safe
+        if self._has_active_work():
+            raise EELoopError(
+                "EESession is bound to a different event loop that still has "
+                "active work (in-flight requests, pending cache tasks, or an "
+                "open HTTP client). Close the session or wait for all work to "
+                "complete before using it from a new event loop."
+            )
+
+        self.logger.debug(
+            "EESession rebinding from loop %r to loop %r",
+            self._bound_loop,
+            loop,
+        )
+        self._bind(loop)
+
     async def initialize(self) -> "EESession":
         """Asynchronously initialize the session by fetching credentials if needed.
 
@@ -102,6 +163,7 @@ class EESession(SepalCredentialMixin):
         Returns:
             EESession: The initialized session (self)
         """
+        self._ensure_bound()
         if not self._credentials:
             await self.set_credentials()
         return self
@@ -127,6 +189,7 @@ class EESession(SepalCredentialMixin):
         return await session.initialize()
 
     async def get_assets_folder(self) -> str:
+        self._ensure_bound()
         if self.needs_credentials_refresh():
             await self.set_credentials()
         return f"projects/{self.project_id}/assets/"
@@ -154,6 +217,7 @@ class EESession(SepalCredentialMixin):
         return GEEHeaders.model_validate(data)
 
     async def get_headers(self):
+        self._ensure_bound()
         # Only one task refreshes the token; others wait briefly.
         if self.needs_credentials_refresh():
             async with self._auth_refresh_lock:
@@ -162,6 +226,7 @@ class EESession(SepalCredentialMixin):
         return self.get_current_headers()
 
     async def _ensure_client(self) -> httpx.AsyncClient:
+        self._ensure_bound()
         if self._client is None:
             async with self._client_lock:
                 if self._client is None:
@@ -181,6 +246,19 @@ class EESession(SepalCredentialMixin):
         yield client
 
     async def aclose(self):
+        """Close the HTTP client and clear the cache.
+
+        Must be called from the loop the session is bound to.
+        Raises EELoopError if called from a different loop.
+        """
+        if self._bound_loop is not None:
+            loop = asyncio.get_running_loop()
+            if loop is not self._bound_loop:
+                raise EELoopError(
+                    "EESession.aclose() must be called from the event loop "
+                    "the session is bound to. Current loop and bound loop "
+                    "differ."
+                )
         if self._client is not None:
             await self._client.aclose()
             self._client = None
@@ -197,6 +275,7 @@ class EESession(SepalCredentialMixin):
         max_wait: float = 60,
     ) -> Dict[str, Any]:
         """Async REST call with retry logic"""
+        self._ensure_bound()
 
         attempt = 0
         last_error = None
