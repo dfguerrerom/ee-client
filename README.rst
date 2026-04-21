@@ -1,7 +1,27 @@
 Earth Engine Client 🌎
 ==============================
 
-The **Earth Engine Session Client** is a Python package that extends the Google Earth Engine (GEE) API by introducing multi-user session management through custom authentication. 
+.. image:: https://github.com/dfguerrerom/ee-client/actions/workflows/tests.yaml/badge.svg?branch=main
+    :target: https://github.com/dfguerrerom/ee-client/actions/workflows/tests.yaml
+    :alt: Tests
+
+.. image:: https://img.shields.io/pypi/v/ee-client.svg
+    :target: https://pypi.org/project/ee-client/
+    :alt: PyPI version
+
+.. image:: https://img.shields.io/pypi/pyversions/ee-client.svg
+    :target: https://pypi.org/project/ee-client/
+    :alt: Python versions
+
+.. image:: https://img.shields.io/conda/vn/conda-forge/ee-client.svg
+    :target: https://anaconda.org/conda-forge/ee-client
+    :alt: Conda-Forge version
+
+.. image:: https://img.shields.io/pypi/l/ee-client.svg
+    :target: https://github.com/dfguerrerom/ee-client/blob/main/LICENSE
+    :alt: License
+
+The **Earth Engine Session Client** is a Python package that extends the Google Earth Engine (GEE) API by introducing multi-user session management through custom authentication.
 
 **Why This Package?**
 
