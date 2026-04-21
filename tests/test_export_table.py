@@ -62,11 +62,7 @@ async def test_table_to_asset_async_sends_asset_export_options():
     fake_expression = {"values": {}, "result": "0"}
     with patch(
         "eeclient.export.table.serializer.encode", return_value=fake_expression
-    ), patch(
-        "eeclient.export.table.encodable.Encodable", object
-    ) as _encodable_cls, patch(
-        "eeclient.export.table.isinstance", return_value=True, create=True
-    ):
+    ), patch("eeclient.export.table.encodable.Encodable", object):
         await table_to_asset_async(
             client=client,
             collection=object(),
