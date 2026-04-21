@@ -39,6 +39,7 @@ dev = [
     "tomli",
     "mypy",
     "pytest",
+    "pytest-asyncio",
     "flask",
 ]
 

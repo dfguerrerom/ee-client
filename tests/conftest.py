@@ -1,9 +1,22 @@
 import logging
+import os
 import uuid
 
 import pytest
 
 from eeclient.helpers import get_sepal_headers_from_auth
+
+_SEPAL_CREDS_PRESENT = all(
+    os.getenv(v) for v in ("SEPAL_HOST", "LOCAL_SEPAL_USER", "LOCAL_SEPAL_PASSWORD")
+)
+
+collect_ignore_glob = []
+if not _SEPAL_CREDS_PRESENT:
+    collect_ignore_glob = [
+        "test_client.py",
+        "test_data.py",
+        "test_integration_*.py",
+    ]
 
 logger = logging.getLogger("eeclient")
 
