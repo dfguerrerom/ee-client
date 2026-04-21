@@ -58,7 +58,7 @@ class ExportOptions(BaseExportModel):
     workload_tag: Optional[str] = None
     priority: Optional[int] = None
     file_export_options: Optional[DriveOptions] = None
-    drive_export_options: Optional[AssetOptions] = None
+    asset_export_options: Optional[AssetOptions] = None
     # TODO: Add support for other export options.
     # See the api: https://developers.google.com/earth-engine/reference/rest/v1alpha/projects.table/export#TableFileExportOptions
 
@@ -105,7 +105,7 @@ async def _export_table(
         workload_tag=workload_tag,
         priority=priority,
         file_export_options=drive_options,
-        drive_export_options=asset_options,
+        asset_export_options=asset_options,
     )
 
     params = export_options.model_dump(by_alias=True, exclude_none=True)
