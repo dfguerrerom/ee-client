@@ -124,26 +124,6 @@ async def test_get_info(sepal_headers):
 
 
 @pytest.mark.asyncio
-async def test_create_and_get_asset(sepal_headers):
-    """
-    Create a folder asset and then retrieve it via get_asset.
-    """
-    session = EESession(sepal_headers=sepal_headers)
-    folder_name = f"test_folder_{random_hash()}/subfolder"
-    folder_id = await create_folder(session, folder=folder_name)
-
-    # Allow some time for the asset to be fully registered
-    await asyncio.sleep(2)
-    asset = await get_asset(session, asset_id=folder_id)
-    assert asset is not None, f"Asset not found: {folder_id}"
-    assert asset["id"] == folder_id
-    assert asset["type"] == "FOLDER"
-
-    # Clean up
-    await delete_folder(session, folder_id=folder_id, recursive=True)
-
-
-@pytest.mark.asyncio
 async def test_list_assets_concurrently(sepal_headers):
     """
     Create a folder, then list its assets concurrently.

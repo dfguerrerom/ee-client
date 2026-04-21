@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from ee.ee_exception import EEException
 
 
