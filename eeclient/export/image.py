@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import TYPE_CHECKING, Optional, Union
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
@@ -44,10 +44,22 @@ class EarthEngineDestination(BaseExportModel):
     name: str
 
 
+_IMAGE_FILE_FORMAT_ALIASES = {
+    "GeoTIFF": "GEO_TIFF",
+}
+
+
 class DriveOptions(BaseExportModel):
     # Removed default so that users must supply a file_format.
     file_format: ImageFileFormat
     drive_destination: DriveDestination
+
+    @field_validator("file_format", mode="before")
+    @classmethod
+    def _accept_legacy_aliases(cls, v):
+        if isinstance(v, str):
+            return _IMAGE_FILE_FORMAT_ALIASES.get(v, v)
+        return v
 
     # TODO: Add support for other export options
     # TODO: add support for format_options

@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
@@ -38,10 +38,23 @@ class EarthEngineDestination(BaseExportModel):
     name: str
 
 
+_TABLE_FILE_FORMAT_ALIASES = {
+    "GeoJSON": "GEO_JSON",
+    "Shapefile": "SHP",
+}
+
+
 class DriveOptions(BaseExportModel):
     # Removed default so that users must supply a file_format.
     file_format: TableFileFormat
     drive_destination: DriveDestination
+
+    @field_validator("file_format", mode="before")
+    @classmethod
+    def _accept_legacy_aliases(cls, v):
+        if isinstance(v, str):
+            return _TABLE_FILE_FORMAT_ALIASES.get(v, v)
+        return v
 
 
 class AssetOptions(BaseExportModel):
