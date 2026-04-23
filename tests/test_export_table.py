@@ -42,6 +42,29 @@ def test_drive_export_options_serialize_as_file_export_options():
     assert "assetExportOptions" not in payload
 
 
+@pytest.mark.parametrize(
+    "alias,canonical",
+    [
+        ("GeoJSON", TableFileFormat.GEO_JSON),
+        ("Shapefile", TableFileFormat.SHP),
+    ],
+)
+def test_drive_options_accepts_legacy_table_aliases(alias, canonical):
+    opts = DriveOptions(
+        file_format=alias,
+        drive_destination=DriveDestination(filename_prefix="out"),
+    )
+    assert opts.file_format == canonical
+
+
+def test_drive_options_rejects_unknown_string():
+    with pytest.raises(ValueError):
+        DriveOptions(
+            file_format="NotAFormat",
+            drive_destination=DriveDestination(filename_prefix="out"),
+        )
+
+
 @pytest.mark.asyncio
 async def test_table_to_asset_async_sends_asset_export_options():
     client = AsyncMock()
