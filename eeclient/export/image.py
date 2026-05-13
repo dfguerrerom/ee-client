@@ -185,7 +185,13 @@ async def _export_image(
     image, updated_image_params, dimensions_consumed = image._apply_crs_and_affine(
         image_params
     )
-    image._apply_selection_and_scale(updated_image_params, dimensions_consumed)
+    # _apply_selection_and_scale returns a new image wrapped in
+    # clipToBoundsAndScale(geometry=region); discarding the return value would
+    # serialize the original unbounded image and cause GEE to reject the task
+    # with "Unable to export unbounded image." (issue #20)
+    image, _ = image._apply_selection_and_scale(
+        updated_image_params, dimensions_consumed
+    )
 
     expression = serializer.encode(image, for_cloud_api=True)
     request_params["expression"] = expression
