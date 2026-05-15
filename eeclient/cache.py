@@ -45,7 +45,7 @@ class ResponseCache:
         self.ttl = ttl
         self.max_size = max_size
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
 
     def make_cache_key(self, *args, **kwargs) -> str:
         """Generate a stable cache key from function arguments."""
@@ -66,6 +66,8 @@ class ResponseCache:
             The cached or freshly fetched result
         """
         # Check cache and get task reference if needed
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             if key in self._cache:
                 entry = self._cache[key]
@@ -108,6 +110,18 @@ class ResponseCache:
                 if key in self._cache:
                     self._cache[key] = CacheEntry(error=e)
             raise
+
+    def has_pending_tasks(self) -> bool:
+        """Return True if any cache entry has an in-flight task."""
+        return any(
+            entry.task is not None and not entry.task.done()
+            for entry in self._cache.values()
+        )
+
+    def _rebind(self):
+        """Create fresh loop-bound state for the current event loop."""
+        self._lock = asyncio.Lock()
+        self._cache.clear()
 
     def clear(self):
         """Clear all cached entries."""

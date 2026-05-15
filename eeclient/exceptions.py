@@ -68,6 +68,12 @@ class CredentialsFileUnknownError(EEClientError):
         super().__init__(error)
 
 
+class EELoopError(EEClientError):
+    """Raised when an EESession is used from the wrong event loop."""
+
+    pass
+
+
 class SepalCredentialsUnavailableError(EEClientError):
     """Raised when SEPAL API cannot provide credentials (e.g., 500 error)."""
 
