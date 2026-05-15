@@ -1,0 +1,10 @@
+# Reviews on these paths require @dfguerrerom even if other reviewers
+# already approved the PR. Enforced via branch protection's "Require review
+# from Code Owners" toggle.
+#
+# Rationale: workflows run with PyPI publishing secrets, pyproject declares
+# the dep tree, conftest executes on every test.
+
+/.github/                       @dfguerrerom
+/pyproject.toml                 @dfguerrerom
+/tests/conftest.py              @dfguerrerom
