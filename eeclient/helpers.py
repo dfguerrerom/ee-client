@@ -13,6 +13,25 @@ from ee.data import convert_asset_id_to_asset_name  # noqa: F401
 
 log = logging.getLogger("eeclient")
 
+# Hosts that legitimately serve self-signed certs in local development.
+# TLS verification is skipped for these (or via EECLIENT_INSECURE_TLS) only —
+# never for arbitrary or production hosts.
+_LOCAL_INSECURE_HOSTS = {"host.docker.internal"}
+
+
+def should_verify_tls(host: Optional[str] = None) -> bool:
+    """Return whether TLS certificates should be verified for ``host``.
+
+    Secure by default. Verification is skipped only for known local-dev hosts
+    that serve self-signed certs, or when the ``EECLIENT_INSECURE_TLS`` env var
+    is explicitly truthy. It is never disabled for arbitrary/production hosts.
+    """
+    if os.getenv("EECLIENT_INSECURE_TLS", "").strip().lower() in {"1", "true", "yes"}:
+        return False
+    if host and host in _LOCAL_INSECURE_HOSTS:
+        return False
+    return True
+
 
 def _get_ee_image(
     ee_object: Union[Image, ImageCollection, Feature, FeatureCollection],
@@ -77,7 +96,7 @@ def get_sepal_headers_from_auth(
         )
 
     session = requests.Session()
-    session.verify = False
+    session.verify = should_verify_tls(sepal_host)
 
     creds_response = session.post(
         f"https://{sepal_host}/api/user/login",
@@ -91,10 +110,8 @@ def get_sepal_headers_from_auth(
 
     creds_response.raise_for_status()
 
-    log.debug(f"Authentication successful. Cookies: {session.cookies}")
-    log.debug(f"Response>>>>>>>>>>: {creds_response.json()}")
-
     sepal_user_obj = SepalUser.model_validate(creds_response.json())
+    log.debug("Authentication successful for user '%s'", sepal_user_obj.username)
 
     cookies_dict = {cookie.name: cookie.value for cookie in session.cookies}
 
