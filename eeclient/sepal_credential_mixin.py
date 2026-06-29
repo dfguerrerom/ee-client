@@ -4,6 +4,7 @@ from eeclient.exceptions import (
     CredentialsFileUnknownError,
     SepalCredentialsUnavailableError,
 )
+from eeclient.helpers import should_verify_tls
 import os
 import logging
 import json
@@ -50,10 +51,7 @@ class SepalCredentialMixin:
             f"https://{self.sepal_host}/api/user-files/download/"
             "?path=%2F.config%2Fearthengine%2Fcredentials"
         )
-        self.verify_ssl = not (
-            self.sepal_host == "host.docker.internal"
-            or self.sepal_host == "danielg.sepal.io"
-        )
+        self.verify_ssl = should_verify_tls(self.sepal_host)
 
         self._google_tokens = self.sepal_user_data.google_tokens
         if self._google_tokens:
