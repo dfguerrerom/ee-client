@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import datetime, timezone
 from unittest import mock
@@ -8,6 +9,8 @@ from eeclient.providers import (
     DEFAULT_SCOPES,
     CredentialSnapshot,
     GoogleAuthProvider,
+    SepalFileProvider,
+    SepalSessionProvider,
     _credentials_from_earthengine_token,
     _credentials_from_mapping,
     _expiry_to_epoch_ms,
@@ -109,3 +112,39 @@ async def test_google_provider_async_refresh():
     prov = GoogleAuthProvider(_fake_creds(), "proj")
     snap = await prov.refresh()
     assert snap.access_token == "AT"
+
+
+# --- Task 4: SepalFileProvider ---
+def test_sepal_file_provider_reads(tmp_path):
+    p = tmp_path / "creds"
+    p.write_text(
+        json.dumps(
+            {
+                "accessToken": "FT",
+                "accessTokenExpiryDate": 9999999999999,
+                "projectId": "fp",
+            }
+        )
+    )
+    prov = SepalFileProvider(p)
+    snap = prov.initial_snapshot()
+    assert snap.access_token == "FT" and snap.project_id == "fp"
+    assert prov.auth_mode == "file"
+
+
+# --- Task 5: SepalSessionProvider ---
+SEPAL_HEADERS = {
+    "cookie": ["SEPAL-SESSIONID=s:abc;"],
+    "sepal-user": [
+        '{"id":1,"username":"admin","googleTokens":{"accessToken":"ST",'
+        '"accessTokenExpiryDate":9999999999999,"projectId":"sp"},"status":"ACTIVE"}'
+    ],
+}
+
+
+def test_sepal_session_initial_snapshot_from_headers(monkeypatch):
+    monkeypatch.setenv("SEPAL_HOST", "sepal.example.org")
+    prov = SepalSessionProvider(SEPAL_HEADERS)
+    snap = prov.initial_snapshot()
+    assert snap.access_token == "ST" and snap.project_id == "sp"
+    assert prov.auth_mode == "sepal" and prov.user == "admin"

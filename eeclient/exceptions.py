@@ -92,6 +92,13 @@ class SepalCredentialsUnavailableError(EEClientError):
         super().__init__(error)
 
 
+class CredentialsResolutionError(EEClientError):
+    """Raised when no credential source resolves for a default EESession()."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
 # {'code': 401, 'message': 'Request had invalid authentication credentials.
 # Expected OAuth 2 access token, login cookie or other valid authentication
 # credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.',

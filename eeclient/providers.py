@@ -11,12 +11,21 @@ from pathlib import Path
 from typing import Optional, Protocol, Tuple
 
 import google.auth
+import httpx
+import requests
 from google.auth.transport.requests import Request as _GoogleRequest
 from google.oauth2 import credentials as oauth_credentials
 from google.oauth2 import service_account
 from ee import oauth as ee_oauth
 
-from eeclient.exceptions import EEClientError
+from eeclient.exceptions import (
+    CredentialsFileNotFoundError,
+    CredentialsResolutionError,
+    EEClientError,
+    SepalCredentialsUnavailableError,
+)
+from eeclient.helpers import should_verify_tls
+from eeclient.models import GoogleTokens, SepalHeaders
 
 log = logging.getLogger("eeclient")
 
@@ -142,6 +151,12 @@ def _application_default_credentials(scopes) -> Tuple[object, Optional[str]]:
     return creds, project
 
 
+def _google_auth_mode(creds) -> str:
+    if isinstance(creds, service_account.Credentials):
+        return "service_account"
+    return "oauth"
+
+
 # ---------------------------------------------------------------------------
 # Providers
 # ---------------------------------------------------------------------------
@@ -185,3 +200,186 @@ class GoogleAuthProvider:
     async def refresh(self) -> CredentialSnapshot:
         await asyncio.to_thread(self._creds.refresh, _GoogleRequest())
         return self._snapshot()
+
+
+class SepalFileProvider:
+    """Reads a SEPAL-provisioned GoogleTokens JSON file (cannot self-refresh)."""
+
+    def __init__(self, path):
+        self.credentials_path = Path(path)
+        self.auth_mode = "file"
+        self.user = "local_user"
+        self.verify_ssl = True
+
+    def _read(self) -> CredentialSnapshot:
+        if not self.credentials_path.exists():
+            raise CredentialsFileNotFoundError(str(self.credentials_path))
+        content = self.credentials_path.read_text().strip()
+        if not content:
+            raise CredentialsFileNotFoundError(str(self.credentials_path))
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in credentials file: {e}")
+        tokens = GoogleTokens.model_validate(data)
+        if not tokens.access_token:
+            raise ValueError("No access token available in credentials file")
+        return CredentialSnapshot(
+            access_token=tokens.access_token,
+            project_id=tokens.project_id,
+            expiry_date=tokens.access_token_expiry_date,
+            native=tokens,
+        )
+
+    def initial_snapshot(self) -> Optional[CredentialSnapshot]:
+        return self._read()
+
+    def refresh_sync(self) -> CredentialSnapshot:
+        return self._read()
+
+    async def refresh(self) -> CredentialSnapshot:
+        return self._read()
+
+
+class SepalSessionProvider:
+    """Downloads GoogleTokens from the SEPAL session API (headers + cookie)."""
+
+    def __init__(self, sepal_headers):
+        self.max_retries = 3
+        self.auth_mode = "sepal"
+        self.sepal_host = os.getenv("SEPAL_HOST")
+        if not self.sepal_host:
+            raise ValueError("SEPAL_HOST environment variable not set")
+        self.sepal_headers = SepalHeaders.model_validate(sepal_headers)
+        self.sepal_session_id = self.sepal_headers.cookies["SEPAL-SESSIONID"]
+        self.sepal_user_data = self.sepal_headers.sepal_user
+        self.user = self.sepal_user_data.username
+        self.sepal_api_download_url = (
+            f"https://{self.sepal_host}/api/user-files/download/"
+            "?path=%2F.config%2Fearthengine%2Fcredentials"
+        )
+        self.verify_ssl = should_verify_tls(self.sepal_host)
+        self._google_tokens = self.sepal_user_data.google_tokens
+
+    def _snapshot(self, tokens: GoogleTokens) -> CredentialSnapshot:
+        return CredentialSnapshot(
+            access_token=tokens.access_token,
+            project_id=tokens.project_id,
+            expiry_date=tokens.access_token_expiry_date,
+            native=tokens,
+        )
+
+    def initial_snapshot(self) -> Optional[CredentialSnapshot]:
+        if self._google_tokens:
+            return self._snapshot(self._google_tokens)
+        return None
+
+    async def refresh(self) -> CredentialSnapshot:
+        attempt = 0
+        last_status = None
+        cookies = httpx.Cookies()
+        cookies.set("SEPAL-SESSIONID", self.sepal_session_id)
+        while attempt < self.max_retries:
+            attempt += 1
+            try:
+                async with httpx.AsyncClient(
+                    cookies=cookies,
+                    verify=self.verify_ssl,
+                    limits=httpx.Limits(
+                        max_connections=100, max_keepalive_connections=50
+                    ),
+                ) as client:
+                    response = await client.get(self.sepal_api_download_url)
+                last_status = response.status_code
+                if response.status_code == 200:
+                    return self._snapshot(GoogleTokens.model_validate(response.json()))
+                elif response.status_code == 500:
+                    raise SepalCredentialsUnavailableError(500)
+            except Exception as e:
+                log.error(
+                    f"Attempt {attempt}/{self.max_retries} refreshing "
+                    f"SEPAL credentials failed: {e}"
+                )
+            await asyncio.sleep(2**attempt)
+        raise ValueError(
+            f"Failed to retrieve credentials from SEPAL after "
+            f"{self.max_retries} attempts, last status code: {last_status}"
+        )
+
+    def refresh_sync(self) -> CredentialSnapshot:
+        attempt = 0
+        last_status = None
+        session = requests.Session()
+        session.cookies.set("SEPAL-SESSIONID", self.sepal_session_id)
+        session.verify = self.verify_ssl
+        try:
+            while attempt < self.max_retries:
+                attempt += 1
+                try:
+                    response = session.get(self.sepal_api_download_url)
+                    last_status = response.status_code
+                    if response.status_code == 200:
+                        return self._snapshot(
+                            GoogleTokens.model_validate(response.json())
+                        )
+                    elif response.status_code == 500:
+                        raise SepalCredentialsUnavailableError(500)
+                except Exception as e:
+                    log.error(
+                        f"Attempt {attempt}/{self.max_retries} refreshing "
+                        f"SEPAL credentials failed: {e}"
+                    )
+                time.sleep(2**attempt)
+        finally:
+            session.close()
+        raise ValueError(
+            f"Failed to retrieve credentials from SEPAL after "
+            f"{self.max_retries} attempts, last status code: {last_status}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Default resolution (home-gated, all-local, no implicit ADC — D10/D11)
+# ---------------------------------------------------------------------------
+def _is_sepal_context() -> bool:
+    return "sepal-user" in Path.home().name
+
+
+def resolve_default_provider() -> CredentialProvider:
+    """Resolve a provider for a headerless ``EESession()`` — all-local, no ADC.
+
+    In a SEPAL context (``sepal-user`` home) this is SEPAL-file-only and fails
+    closed. Otherwise it walks local sources; ADC is never probed here (D10).
+    """
+    ee_dir = Path.home() / ".config" / "earthengine"
+
+    if _is_sepal_context():
+        sepal_file = ee_dir / "credentials"
+        if sepal_file.exists():
+            return SepalFileProvider(sepal_file)
+        raise CredentialsResolutionError(
+            f"SEPAL credentials not found at {sepal_file}. In a SEPAL context "
+            "machine credentials are not used (fail closed)."
+        )
+
+    sepal_file = ee_dir / "sepal_credentials"
+    if sepal_file.exists():
+        return SepalFileProvider(sepal_file)
+
+    raw = os.getenv("EARTHENGINE_TOKEN")
+    if raw:
+        creds, project = _credentials_from_earthengine_token(raw, DEFAULT_SCOPES)
+        return GoogleAuthProvider(creds, project, auth_mode=_google_auth_mode(creds))
+
+    ee_file = ee_dir / "credentials"
+    if ee_file.exists():
+        creds, project = _oauth_credentials_from_ee_file(DEFAULT_SCOPES)
+        return GoogleAuthProvider(creds, project, auth_mode="oauth")
+
+    raise CredentialsResolutionError(
+        "No local credential source found (tried the SEPAL file "
+        f"{ee_dir / 'sepal_credentials'}, EARTHENGINE_TOKEN, and the Earth "
+        f"Engine OAuth file {ee_file}). ADC is not used implicitly — call "
+        "EESession.from_application_default() to use Application Default "
+        "Credentials."
+    )
