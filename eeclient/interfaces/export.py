@@ -18,8 +18,7 @@ class ExportProtocol(Protocol):
         scale: Optional[float] = ...,
         crs: Optional[str] = ...,
         crs_transform: Optional[AffineTransform] = ...,
-    ) -> dict:
-        ...
+    ) -> dict: ...
 
     async def image_to_drive_async(
         self,
@@ -37,8 +36,7 @@ class ExportProtocol(Protocol):
         scale: Optional[float] = ...,
         crs: Optional[str] = ...,
         crs_transform: Optional[AffineTransform] = ...,
-    ) -> dict:
-        ...
+    ) -> dict: ...
 
     async def table_to_drive_async(
         self,
@@ -50,8 +48,7 @@ class ExportProtocol(Protocol):
         selectors: Optional[list] = ...,
         max_vertices: Optional[int] = ...,
         priority: Optional[int] = ...,
-    ) -> dict:
-        ...
+    ) -> dict: ...
 
     async def table_to_asset(
         self,
@@ -61,5 +58,4 @@ class ExportProtocol(Protocol):
         selectors: Optional[list] = ...,
         max_vertices: Optional[int] = ...,
         priority: Optional[int] = ...,
-    ) -> dict:
-        ...
+    ) -> dict: ...
