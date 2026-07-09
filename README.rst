@@ -29,13 +29,12 @@ While Google Earth Engine applications can be created using a global service acc
 
 Unlike the standard GEE API—which relies on a global session object and does not support multi-user environments—this client ensures that each session is authenticated and managed independently with user-specific credentials.
 
-Each session is instantiated via the ``EESession`` class, which supports several credential sources — SEPAL headers, a service-account key, an ``EARTHENGINE_TOKEN``, ``earthengine authenticate`` OAuth credentials, or Application Default Credentials. SEPAL is one supported source among several. Once authenticated, the session exposes an ``operations`` property that provides easy access to key API methods.
+Each session is instantiated via the ``EESession`` class, which supports several credential sources — a service-account key, an ``EARTHENGINE_TOKEN``, ``earthengine authenticate`` OAuth credentials, or Application Default Credentials. Once authenticated, the session exposes an ``operations`` property that provides easy access to key API methods.
 
 Key Features
 ------------
 
 - **Custom User Authentication**: Enable users to access their private GEE assets without requiring them to be public, solving the limitation of global service account approaches.
-- **SEPAL-based Initialization**: Create sessions using SEPAL headers. The required ``sepal-session-id`` cookie is automatically used to retrieve GEE credentials.
 - **Multi-User Session Management**: Encapsulate user-specific credentials and project data in independent ``EESession`` objects.
 - **Enhanced API Operations**: Access GEE functionalities via the ``operations`` property, which includes methods such as:
   - ``get_info``: Retrieve detailed information about an Earth Engine object.
@@ -58,43 +57,7 @@ Usage
 Initialization and Authentication
 +++++++++++++++++++++++++++++++++
 
-The Earth Engine Session Client can be initialized from SEPAL headers (shown here) or from any standard Google/Earth Engine credential source (see *Credential sources* below). For the SEPAL path, **ensure that the headers include the ``sepal-session-id`` cookie**, which is used to retrieve the GEE credentials.
-
-.. code-block:: python
-
-   from eeclient import EESession
-
-   # Example SEPAL headers with the mandatory sepal-session-id cookie.
-   sepal_headers = {
-       "cookie": [
-           "sepal-session-id=your_session_id",
-           "other_cookie=other_value"
-       ],
-       "sepal_user": [{
-           "id": 123,
-           "username": "your_username",
-           "googleTokens": {
-               "accessToken": "your_access_token",
-               "refreshToken": "your_refresh_token",
-               "accessTokenExpiryDate": 1234567890,
-               "REFRESH_IF_EXPIRES_IN_MINUTES": 10,
-               "projectId": "your_project_id",
-               "legacyProject": "your_legacy_project"
-           },
-           "status": "active",
-           "roles": ["role1", "role2"],
-           "systemUser": False,
-           "admin": False
-       }]
-   }
-
-   # Create and validate the session with SEPAL headers
-   session = EESession(sepal_headers)
-
-Credential sources
-++++++++++++++++++
-
-Beyond SEPAL headers, a session can be built from any standard Google/Earth Engine credential via factory constructors, each holding a live, refreshable credential:
+A session can be built from any standard Google/Earth Engine credential via factory constructors, each holding a live, refreshable credential:
 
 .. code-block:: python
 
@@ -112,17 +75,17 @@ Beyond SEPAL headers, a session can be built from any standard Google/Earth Engi
    # Application Default Credentials (explicit opt-in)
    session = EESession.from_application_default()
 
-   # Resolve from the environment (opt-in): SEPAL file / EARTHENGINE_TOKEN / EE OAuth file
+   # Resolve from the environment (opt-in): EARTHENGINE_TOKEN / EE OAuth file
    session = EESession.from_default()
 
-Credentials are **never resolved implicitly** — a bare ``EESession()`` requires a source (pass ``sepal_headers`` or use a ``from_*`` factory). To resolve from the environment explicitly, call ``EESession.from_default()``, which walks local sources only, in this order:
+Credentials are **never resolved implicitly** — use a ``from_*`` factory to build a session. To resolve from the environment explicitly, call ``EESession.from_default()``, which walks local sources only, in this order:
 
 1. ``EARTHENGINE_TOKEN`` environment variable
 2. Earth Engine OAuth file (``~/.config/earthengine/credentials``)
 
-Application Default Credentials are **not** included — call ``EESession.from_application_default()`` to use them. Inside a SEPAL environment (a ``sepal-user`` home) ``from_default()`` is SEPAL-only and fails closed.
+Application Default Credentials are **not** included — call ``EESession.from_application_default()`` to use them.
 
-To see which source a session ended up using, inspect ``session.auth_mode`` (the credential *kind*: ``sepal``/``file``/``oauth``/``service_account``/``adc``) and ``session.auth_source`` (the precise origin: ``sepal_session``/``sepal_file``/``earthengine_token``/``ee_oauth_file``/``service_account``/``application_default``/``google_credentials``).
+To see which source a session ended up using, inspect ``session.auth_mode`` (the credential *kind*: ``file``/``oauth``/``service_account``/``adc``) and ``session.auth_source`` (the precise origin: ``earthengine_token``/``ee_oauth_file``/``service_account``/``application_default``/``google_credentials``).
 
 Making API Calls
 ++++++++++++++++
