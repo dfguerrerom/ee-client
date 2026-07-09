@@ -56,18 +56,21 @@ class EESession(CredentialMixin):
         *,
         _provider=None,
     ):
-        """Session that handles two scenarios to set the headers for Earth Engine API
+        """Session for the Earth Engine REST API with pluggable authentication.
 
-        It can be initialized with the headers sent by SEPAL or with the
-        credentials and project
+        Provide a credential source: ``sepal_headers`` for the SEPAL session
+        path, or use an ``EESession.from_*()`` factory / ``from_default()`` for
+        service-account, ``EARTHENGINE_TOKEN``, OAuth or ADC sources. A bare
+        ``EESession()`` with no source raises ``EEClientError``.
 
         Args:
-            sepal_headers (SepalHeaders): The headers sent by SEPAL
-            enforce_project_id (bool, optional): If set, it cannot be changed.
-                Defaults to True.
+            sepal_headers (Optional[SepalHeaders]): SEPAL session headers; omit
+                and use a factory / ``from_default()`` for other sources.
+            enforce_project_id (bool, optional): If set, the project id is not
+                overwritten on refresh. Defaults to True.
 
         Raises:
-            ValueError: If SEPAL_HOST environment variable is not set
+            EEClientError: If no credential source is provided.
         """
         self._inflight = asyncio.BoundedSemaphore(30)
         self._rate = SimpleRateLimiter(60)
