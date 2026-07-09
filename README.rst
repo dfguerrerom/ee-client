@@ -29,7 +29,7 @@ While Google Earth Engine applications can be created using a global service acc
 
 Unlike the standard GEE API—which relies on a global session object and does not support multi-user environments—this client ensures that each session is authenticated and managed independently with user-specific credentials.
 
-Each session is instantiated via the ``EESession`` class, which supports several credential sources — a service-account key, an ``EARTHENGINE_TOKEN``, ``earthengine authenticate`` OAuth credentials, or Application Default Credentials. Once authenticated, the session exposes an ``operations`` property that provides easy access to key API methods.
+Each session is instantiated via the ``EESession`` class, which supports several credential sources — a service-account key, an ``EARTHENGINE_TOKEN`` environment variable, ``earthengine authenticate`` OAuth credentials, or Application Default Credentials. Once authenticated, the session exposes an ``operations`` property that provides easy access to key API methods.
 
 Key Features
 ------------
@@ -78,7 +78,7 @@ A session can be built from any standard Google/Earth Engine credential via fact
    # Resolve from the environment (opt-in): EARTHENGINE_TOKEN / EE OAuth file
    session = EESession.from_default()
 
-Credentials are **never resolved implicitly** — use a ``from_*`` factory to build a session. To resolve from the environment explicitly, call ``EESession.from_default()``, which walks local sources only, in this order:
+Credentials are **never resolved implicitly** — a bare ``EESession()`` constructor call is not supported; always use a ``from_*`` factory to build a session. To resolve from the environment explicitly, call ``EESession.from_default()``, which walks local sources only, in this order:
 
 1. ``EARTHENGINE_TOKEN`` environment variable
 2. Earth Engine OAuth file (``~/.config/earthengine/credentials``)
