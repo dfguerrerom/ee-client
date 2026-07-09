@@ -41,9 +41,9 @@ class CredentialMixin:
             self._provider = SepalSessionProvider(sepal_headers)
         else:
             raise EEClientError(
-                "EESession requires a credential source: pass sepal_headers, use "
-                "an EESession.from_*() factory, or EESession.from_default() to "
-                "resolve credentials from the environment."
+                "EESession requires a credential source. Call "
+                "EESession.from_default() to resolve credentials from the "
+                "environment, or use an explicit EESession.from_*() factory."
             )
 
         prov = self._provider

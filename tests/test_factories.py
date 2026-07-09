@@ -76,8 +76,10 @@ def test_sepal_credential_mixin_alias():
 def test_bare_session_requires_a_source():
     from eeclient.exceptions import EEClientError
 
-    with pytest.raises(EEClientError):
+    with pytest.raises(EEClientError) as e:
         EESession()  # no headers, no provider -> caller must specify directly
+    # the error must stay provider-agnostic — no SEPAL-specific framing
+    assert "sepal" not in str(e.value).lower()
 
 
 def test_from_default_resolves_earthengine_token(monkeypatch, tmp_path):
