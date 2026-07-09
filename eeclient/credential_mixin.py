@@ -48,6 +48,7 @@ class CredentialMixin:
 
         prov = self._provider
         self.auth_mode = prov.auth_mode
+        self.auth_source = getattr(prov, "auth_source", None)
         self.user = prov.user
         self.verify_ssl = getattr(prov, "verify_ssl", True)
         for name in _FORWARDED:

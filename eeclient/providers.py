@@ -164,11 +164,18 @@ class GoogleAuthProvider:
     """Wraps a live google.auth Credentials (service account, OAuth, or ADC)."""
 
     def __init__(
-        self, credentials, project_id, *, auth_mode="oauth", user="local_user"
+        self,
+        credentials,
+        project_id,
+        *,
+        auth_mode="oauth",
+        user="local_user",
+        auth_source="google_credentials",
     ):
         self._creds = credentials
         self._project_id = project_id
         self.auth_mode = auth_mode
+        self.auth_source = auth_source
         self.user = user
         self.verify_ssl = True
 
@@ -208,6 +215,7 @@ class SepalFileProvider:
     def __init__(self, path):
         self.credentials_path = Path(path)
         self.auth_mode = "file"
+        self.auth_source = "sepal_file"
         self.user = "local_user"
         self.verify_ssl = True
 
@@ -247,6 +255,7 @@ class SepalSessionProvider:
     def __init__(self, sepal_headers):
         self.max_retries = 3
         self.auth_mode = "sepal"
+        self.auth_source = "sepal_session"
         self.sepal_host = os.getenv("SEPAL_HOST")
         if not self.sepal_host:
             raise ValueError("SEPAL_HOST environment variable not set")
@@ -368,12 +377,19 @@ def resolve_default_provider() -> CredentialProvider:
     raw = os.getenv("EARTHENGINE_TOKEN")
     if raw:
         creds, project = _credentials_from_earthengine_token(raw, DEFAULT_SCOPES)
-        return GoogleAuthProvider(creds, project, auth_mode=_google_auth_mode(creds))
+        return GoogleAuthProvider(
+            creds,
+            project,
+            auth_mode=_google_auth_mode(creds),
+            auth_source="earthengine_token",
+        )
 
     ee_file = ee_dir / "credentials"
     if ee_file.exists():
         creds, project = _oauth_credentials_from_ee_file(DEFAULT_SCOPES)
-        return GoogleAuthProvider(creds, project, auth_mode="oauth")
+        return GoogleAuthProvider(
+            creds, project, auth_mode="oauth", auth_source="ee_oauth_file"
+        )
 
     raise CredentialsResolutionError(
         "No local credential source found (tried EARTHENGINE_TOKEN and the "

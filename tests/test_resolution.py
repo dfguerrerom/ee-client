@@ -85,3 +85,10 @@ def test_leftover_sepal_credentials_is_never_selected(home):
     _write_sepal_artifact(home)
     with pytest.raises(EEClientError):
         resolve_default_provider()
+
+
+def test_from_default_auth_source_is_earthengine_token(home, monkeypatch):
+    monkeypatch.setenv(
+        "EARTHENGINE_TOKEN", json.dumps({"refresh_token": "rt", "project": "p"})
+    )
+    assert resolve_default_provider().auth_source == "earthengine_token"

@@ -122,6 +122,8 @@ Credentials are **never resolved implicitly** — a bare ``EESession()`` require
 
 Application Default Credentials are **not** included — call ``EESession.from_application_default()`` to use them. Inside a SEPAL environment (a ``sepal-user`` home) ``from_default()`` is SEPAL-only and fails closed.
 
+To see which source a session ended up using, inspect ``session.auth_mode`` (the credential *kind*: ``sepal``/``file``/``oauth``/``service_account``/``adc``) and ``session.auth_source`` (the precise origin: ``sepal_session``/``sepal_file``/``earthengine_token``/``ee_oauth_file``/``service_account``/``application_default``/``google_credentials``).
+
 Making API Calls
 ++++++++++++++++
 

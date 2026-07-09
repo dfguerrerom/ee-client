@@ -93,3 +93,53 @@ def test_from_default_resolves_earthengine_token(monkeypatch, tmp_path):
         assert s._credentials is None  # deferred: no refresh at construction
         s.set_credentials_sync()  # explicit sync refresh
     assert s.access_token == "AT" and s.project_id == "p"
+
+
+# --- auth_source: precise credential source (finer than auth_mode) ---
+def test_auth_source_google_credentials():
+    s = EESession.from_google_credentials(_fake_creds(), project="p")
+    assert s.auth_source == "google_credentials"
+
+
+def test_auth_source_service_account():
+    with mock.patch("eeclient.providers.service_account") as sa:
+        sa.Credentials.from_service_account_info.return_value = _fake_creds()
+        s = EESession.from_service_account(
+            {"type": "service_account", "project_id": "sp"}
+        )
+    assert s.auth_source == "service_account" and s.auth_mode == "service_account"
+
+
+def test_auth_source_earthengine_token(monkeypatch):
+    monkeypatch.setenv(
+        "EARTHENGINE_TOKEN", json.dumps({"refresh_token": "rt", "project": "p"})
+    )
+    with mock.patch("eeclient.providers.oauth_credentials") as oc:
+        oc.Credentials.return_value = _fake_creds()
+        s = EESession.from_earthengine_token()
+    assert s.auth_source == "earthengine_token" and s.auth_mode == "oauth"
+
+
+def test_auth_source_ee_oauth_file(monkeypatch):
+    monkeypatch.delenv("EARTHENGINE_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "eeclient.providers._oauth_credentials_from_ee_file",
+        lambda scopes: (_fake_creds(), "p"),
+    )
+    s = EESession.from_earthengine_token()
+    assert s.auth_source == "ee_oauth_file" and s.auth_mode == "oauth"
+
+
+def test_auth_source_application_default():
+    with mock.patch(
+        "eeclient.providers.google.auth.default",
+        return_value=(_fake_creds(), "adcproj"),
+    ):
+        s = EESession.from_application_default()
+    assert s.auth_source == "application_default"
+
+
+def test_auth_source_sepal_session(dummy_headers, monkeypatch):
+    monkeypatch.setenv("SEPAL_HOST", "sepal.example.org")
+    s = EESession(dummy_headers)
+    assert s.auth_source == "sepal_session"

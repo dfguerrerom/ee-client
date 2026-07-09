@@ -19,6 +19,9 @@
   `from_application_default()`.
 - Live token refresh for google-auth-backed modes (removes the "file mode cannot
   self-refresh" limitation for them).
+- `session.auth_source` reports the precise credential origin (`sepal_session` /
+  `sepal_file` / `earthengine_token` / `ee_oauth_file` / `service_account` /
+  `application_default` / `google_credentials`) — finer-grained than `auth_mode`.
 
 ### Backward compatibility
 

@@ -129,12 +129,20 @@ class EESession(CredentialMixin):
     # -- Agnostic credential factories -------------------------------------
     @classmethod
     def from_google_credentials(
-        cls, creds, *, project=None, enforce_project_id=True, _auth_mode="oauth"
+        cls,
+        creds,
+        *,
+        project=None,
+        enforce_project_id=True,
+        _auth_mode="oauth",
+        _auth_source="google_credentials",
     ) -> "EESession":
         """Build a session from a live ``google.auth`` Credentials object."""
         from eeclient.providers import GoogleAuthProvider
 
-        provider = GoogleAuthProvider(creds, project, auth_mode=_auth_mode)
+        provider = GoogleAuthProvider(
+            creds, project, auth_mode=_auth_mode, auth_source=_auth_source
+        )
         session = cls(enforce_project_id=enforce_project_id, _provider=provider)
         session.set_credentials_sync()  # eager load (factories are the sync path, D6)
         return session
@@ -154,6 +162,7 @@ class EESession(CredentialMixin):
             project=project or sa_project,
             enforce_project_id=enforce_project_id,
             _auth_mode="service_account",
+            _auth_source="service_account",
         )
 
     @classmethod
@@ -164,6 +173,7 @@ class EESession(CredentialMixin):
         from eeclient.providers import (
             DEFAULT_SCOPES,
             _credentials_from_earthengine_token,
+            _google_auth_mode,
             _oauth_credentials_from_ee_file,
         )
 
@@ -172,12 +182,16 @@ class EESession(CredentialMixin):
             creds, tok_project = _credentials_from_earthengine_token(
                 raw, DEFAULT_SCOPES
             )
+            mode, source = _google_auth_mode(creds), "earthengine_token"
         else:
             creds, tok_project = _oauth_credentials_from_ee_file(DEFAULT_SCOPES)
+            mode, source = "oauth", "ee_oauth_file"
         return cls.from_google_credentials(
             creds,
             project=project or tok_project,
             enforce_project_id=enforce_project_id,
+            _auth_mode=mode,
+            _auth_source=source,
         )
 
     @classmethod
@@ -193,6 +207,7 @@ class EESession(CredentialMixin):
             project=project or adc_project,
             enforce_project_id=enforce_project_id,
             _auth_mode="adc",
+            _auth_source="application_default",
         )
 
     @classmethod
