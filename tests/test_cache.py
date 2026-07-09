@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 from eeclient.cache import ResponseCache, CacheEntry
 from eeclient.data import get_assets_async
 
-
 # CacheEntry Tests
 
 

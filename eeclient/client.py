@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.models import GEEHeaders, SepalHeaders
-from eeclient.sepal_credential_mixin import SepalCredentialMixin
+from eeclient.credential_mixin import CredentialMixin
 from eeclient.cache import ResponseCache
 
 import eeclient.export as _export_module
@@ -30,11 +30,6 @@ logger = logging.getLogger("eeclient")
 # Default values that won't raise exceptions during import
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha"
 
-# These will be set properly when EESession is initialized
-SEPAL_HOST = os.getenv("SEPAL_HOST")
-SEPAL_API_DOWNLOAD_URL = None
-VERIFY_SSL = True
-
 
 class SimpleRateLimiter:
     def __init__(self, qps: float | None):
@@ -53,11 +48,13 @@ class SimpleRateLimiter:
             self._next = max(now, self._next) + 1.0 / self.qps
 
 
-class EESession(SepalCredentialMixin):
+class EESession(CredentialMixin):
     def __init__(
         self,
         sepal_headers: Optional[SepalHeaders] = None,
         enforce_project_id: bool = True,
+        *,
+        _provider=None,
     ):
         """Session that handles two scenarios to set the headers for Earth Engine API
 
@@ -83,7 +80,7 @@ class EESession(SepalCredentialMixin):
         self._assets_cache = ResponseCache(ttl=10.0, max_size=100)
 
         self.enforce_project_id = enforce_project_id
-        super().__init__(sepal_headers)
+        super().__init__(sepal_headers, provider=_provider)
 
         self.logger = logging.getLogger(f"eeclient.{self.user}")
         self.logger.debug(
@@ -117,8 +114,9 @@ class EESession(SepalCredentialMixin):
         """Asynchronously create an EESession instance.
 
         Args:
-            sepal_headers (Optional[SepalHeaders]): The headers sent by SEPAL.
-                If None, will use file-based authentication.
+            sepal_headers (Optional[SepalHeaders]): SEPAL headers for SEPAL
+                session mode (required here). For other sources use an
+                EESession.from_*() factory, or EESession.from_default().
             enforce_project_id (bool, optional): If set, it cannot be changed.
                 Defaults to True.
 
@@ -127,6 +125,113 @@ class EESession(SepalCredentialMixin):
         """
         session = cls(sepal_headers, enforce_project_id)
         return await session.initialize()
+
+    # -- Agnostic credential factories -------------------------------------
+    @classmethod
+    def from_google_credentials(
+        cls,
+        creds,
+        *,
+        project=None,
+        enforce_project_id=True,
+        _auth_mode="oauth",
+        _auth_source="google_credentials",
+    ) -> "EESession":
+        """Build a session from a live ``google.auth`` Credentials object."""
+        from eeclient.providers import GoogleAuthProvider
+
+        provider = GoogleAuthProvider(
+            creds, project, auth_mode=_auth_mode, auth_source=_auth_source
+        )
+        session = cls(enforce_project_id=enforce_project_id, _provider=provider)
+        session.set_credentials_sync()  # eager load (factories are the sync path, D6)
+        return session
+
+    @classmethod
+    def from_service_account(
+        cls, info_or_path, *, project=None, scopes=None, enforce_project_id=True
+    ) -> "EESession":
+        """Build a session from a service-account key (dict or file path)."""
+        from eeclient.providers import DEFAULT_SCOPES, _service_account_credentials
+
+        creds, sa_project = _service_account_credentials(
+            info_or_path, scopes or DEFAULT_SCOPES
+        )
+        return cls.from_google_credentials(
+            creds,
+            project=project or sa_project,
+            enforce_project_id=enforce_project_id,
+            _auth_mode="service_account",
+            _auth_source="service_account",
+        )
+
+    @classmethod
+    def from_earthengine_token(
+        cls, *, project=None, enforce_project_id=True
+    ) -> "EESession":
+        """Build a session from ``EARTHENGINE_TOKEN``, else the EE OAuth file."""
+        from eeclient.providers import (
+            DEFAULT_SCOPES,
+            _credentials_from_earthengine_token,
+            _google_auth_mode,
+            _oauth_credentials_from_ee_file,
+        )
+
+        raw = os.getenv("EARTHENGINE_TOKEN")
+        if raw:
+            creds, tok_project = _credentials_from_earthengine_token(
+                raw, DEFAULT_SCOPES
+            )
+            mode, source = _google_auth_mode(creds), "earthengine_token"
+        else:
+            creds, tok_project = _oauth_credentials_from_ee_file(DEFAULT_SCOPES)
+            mode, source = "oauth", "ee_oauth_file"
+        return cls.from_google_credentials(
+            creds,
+            project=project or tok_project,
+            enforce_project_id=enforce_project_id,
+            _auth_mode=mode,
+            _auth_source=source,
+        )
+
+    @classmethod
+    def from_application_default(
+        cls, *, project=None, scopes=None, enforce_project_id=True
+    ) -> "EESession":
+        """Build a session from Application Default Credentials (opt-in ADC)."""
+        from eeclient.providers import DEFAULT_SCOPES, _application_default_credentials
+
+        creds, adc_project = _application_default_credentials(scopes or DEFAULT_SCOPES)
+        return cls.from_google_credentials(
+            creds,
+            project=project or adc_project,
+            enforce_project_id=enforce_project_id,
+            _auth_mode="adc",
+            _auth_source="application_default",
+        )
+
+    @classmethod
+    def from_sepal_headers(cls, headers, *, enforce_project_id=True) -> "EESession":
+        """Build a session from SEPAL headers (names the existing path)."""
+        return cls(headers, enforce_project_id=enforce_project_id)
+
+    @classmethod
+    def from_default(cls, *, enforce_project_id=True) -> "EESession":
+        """Resolve credentials from the environment — explicit opt-in.
+
+        Walks local sources only (SEPAL file, ``EARTHENGINE_TOKEN``, Earth Engine
+        OAuth file) and fails closed in a SEPAL context. ADC is not included —
+        use ``from_application_default()``. This is opt-in: a bare ``EESession()``
+        does not auto-resolve; the caller must pick a source.
+
+        Construction does no network I/O — the token refresh is deferred to
+        ``await initialize()`` / the first ``get_headers()`` so async callers are
+        not blocked (use ``set_credentials_sync()`` for a synchronous refresh).
+        """
+        from eeclient.providers import resolve_default_provider
+
+        provider = resolve_default_provider()
+        return cls(enforce_project_id=enforce_project_id, _provider=provider)
 
     async def get_assets_folder(self) -> str:
         if self.needs_credentials_refresh():
@@ -149,7 +254,7 @@ class EESession(SepalCredentialMixin):
 
         data = {
             "x-goog-user-project": self.project_id,
-            "Authorization": f"Bearer {self._credentials.access_token}",
+            "Authorization": f"Bearer {self.access_token}",
             "Username": username,
         }
 
@@ -268,9 +373,7 @@ class EESession(SepalCredentialMixin):
                     error_type = (
                         "Rate limit exceeded"
                         if e.code == 429
-                        else "Unauthorized"
-                        if e.code == 401
-                        else "Service unavailable"
+                        else "Unauthorized" if e.code == 401 else "Service unavailable"
                     )
                     attempt += 1
                     wait_time = min(initial_wait * (2**attempt), max_wait)
