@@ -362,10 +362,9 @@ def resolve_default_provider() -> CredentialProvider:
             "machine credentials are not used (fail closed)."
         )
 
-    sepal_file = ee_dir / "sepal_credentials"
-    if sepal_file.exists():
-        return SepalFileProvider(sepal_file)
-
+    # Note: ``~/.config/earthengine/sepal_credentials`` is intentionally NOT a
+    # source here — it is a hand-created, non-refreshable artifact, not a real
+    # credential the library should auto-discover (issue #12 exists to replace it).
     raw = os.getenv("EARTHENGINE_TOKEN")
     if raw:
         creds, project = _credentials_from_earthengine_token(raw, DEFAULT_SCOPES)
@@ -377,9 +376,8 @@ def resolve_default_provider() -> CredentialProvider:
         return GoogleAuthProvider(creds, project, auth_mode="oauth")
 
     raise CredentialsResolutionError(
-        "No local credential source found (tried the SEPAL file "
-        f"{ee_dir / 'sepal_credentials'}, EARTHENGINE_TOKEN, and the Earth "
-        f"Engine OAuth file {ee_file}). ADC is not used implicitly — call "
+        "No local credential source found (tried EARTHENGINE_TOKEN and the "
+        f"Earth Engine OAuth file {ee_file}). ADC is not used implicitly — call "
         "EESession.from_application_default() to use Application Default "
         "Credentials."
     )

@@ -62,3 +62,26 @@ def test_sepal_host_alone_does_not_gate(home, monkeypatch):
     )
     prov = resolve_default_provider()
     assert isinstance(prov, GoogleAuthProvider)
+
+
+def _write_sepal_artifact(home):
+    (home / ".config/earthengine/sepal_credentials").write_text(
+        '{"accessToken":"stale","accessTokenExpiryDate":1,"projectId":"p"}'
+    )
+
+
+def test_leftover_sepal_credentials_does_not_shadow_live_source(home, monkeypatch):
+    # A hand-created sepal_credentials artifact must NOT be picked over a live source.
+    _write_sepal_artifact(home)
+    monkeypatch.setenv(
+        "EARTHENGINE_TOKEN", json.dumps({"refresh_token": "rt", "project": "p"})
+    )
+    prov = resolve_default_provider()
+    assert isinstance(prov, GoogleAuthProvider)  # the token wins, not the SEPAL file
+
+
+def test_leftover_sepal_credentials_is_never_selected(home):
+    # Only the hand-created artifact present + no live source -> raise (not select it).
+    _write_sepal_artifact(home)
+    with pytest.raises(EEClientError):
+        resolve_default_provider()
