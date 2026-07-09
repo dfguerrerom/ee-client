@@ -132,6 +132,40 @@ def test_sepal_file_provider_reads(tmp_path):
     assert prov.auth_mode == "file"
 
 
+def _write_file_creds(tmp_path, expiry_ms):
+    p = tmp_path / "creds"
+    p.write_text(
+        json.dumps(
+            {"accessToken": "x", "accessTokenExpiryDate": expiry_ms, "projectId": "p"}
+        )
+    )
+    return p
+
+
+def test_sepal_file_provider_refresh_raises_on_expired(tmp_path):
+    from eeclient.exceptions import CredentialsFileUnknownError
+
+    prov = SepalFileProvider(_write_file_creds(tmp_path, 1))  # long-expired
+    prov.max_retries = 1  # don't sleep/retry in the test
+    with pytest.raises(CredentialsFileUnknownError):
+        prov.refresh_sync()  # must NOT return a known-expired token
+
+
+@pytest.mark.asyncio
+async def test_sepal_file_provider_async_refresh_raises_on_expired(tmp_path):
+    from eeclient.exceptions import CredentialsFileUnknownError
+
+    prov = SepalFileProvider(_write_file_creds(tmp_path, 1))
+    prov.max_retries = 1
+    with pytest.raises(CredentialsFileUnknownError):
+        await prov.refresh()
+
+
+def test_sepal_file_provider_refresh_returns_fresh(tmp_path):
+    snap = SepalFileProvider(_write_file_creds(tmp_path, 9999999999999)).refresh_sync()
+    assert snap.access_token == "x"
+
+
 # --- Task 5: SepalSessionProvider ---
 SEPAL_HEADERS = {
     "cookie": ["SEPAL-SESSIONID=s:abc;"],

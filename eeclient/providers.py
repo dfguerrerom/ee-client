@@ -20,6 +20,7 @@ from ee import oauth as ee_oauth
 
 from eeclient.exceptions import (
     CredentialsFileNotFoundError,
+    CredentialsFileUnknownError,
     CredentialsResolutionError,
     EEClientError,
     SepalCredentialsUnavailableError,
@@ -218,6 +219,7 @@ class SepalFileProvider:
         self.auth_source = "sepal_file"
         self.user = "local_user"
         self.verify_ssl = True
+        self.max_retries = 3
 
     def _read(self) -> CredentialSnapshot:
         if not self.credentials_path.exists():
@@ -239,14 +241,32 @@ class SepalFileProvider:
             native=tokens,
         )
 
+    @staticmethod
+    def _is_expired(snap: CredentialSnapshot) -> bool:
+        return (snap.expiry_date / 1000) - time.time() < 60
+
     def initial_snapshot(self) -> Optional[CredentialSnapshot]:
         return self._read()
 
     def refresh_sync(self) -> CredentialSnapshot:
-        return self._read()
+        for attempt in range(1, self.max_retries + 1):
+            snap = self._read()
+            if not self._is_expired(snap):
+                return snap
+            if attempt < self.max_retries:
+                time.sleep(2**attempt)
+        # File mode cannot self-refresh; surface a clear error instead of
+        # returning a known-expired token (which would 401-loop).
+        raise CredentialsFileUnknownError()
 
     async def refresh(self) -> CredentialSnapshot:
-        return self._read()
+        for attempt in range(1, self.max_retries + 1):
+            snap = self._read()
+            if not self._is_expired(snap):
+                return snap
+            if attempt < self.max_retries:
+                await asyncio.sleep(2**attempt)
+        raise CredentialsFileUnknownError()
 
 
 class SepalSessionProvider:
