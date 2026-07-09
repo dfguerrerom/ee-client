@@ -30,11 +30,6 @@ logger = logging.getLogger("eeclient")
 # Default values that won't raise exceptions during import
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha"
 
-# These will be set properly when EESession is initialized
-SEPAL_HOST = os.getenv("SEPAL_HOST")
-SEPAL_API_DOWNLOAD_URL = None
-VERIFY_SSL = True
-
 
 class SimpleRateLimiter:
     def __init__(self, qps: float | None):
