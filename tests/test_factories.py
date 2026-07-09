@@ -2,6 +2,8 @@ import json
 from datetime import datetime
 from unittest import mock
 
+import pytest
+
 from eeclient.client import EESession
 
 
@@ -70,20 +72,24 @@ def test_sepal_credential_mixin_alias():
     assert SepalCredentialMixin is CredentialMixin
 
 
-# --- Non-blocking construction (D6): bare EESession() must not refresh at init ---
-def test_bare_session_no_network_construction(monkeypatch, tmp_path):
+# --- Explicit-only: a bare EESession() must not auto-resolve ---
+def test_bare_session_requires_a_source():
+    from eeclient.exceptions import EEClientError
+
+    with pytest.raises(EEClientError):
+        EESession()  # no headers, no provider -> caller must specify directly
+
+
+def test_from_default_resolves_earthengine_token(monkeypatch, tmp_path):
     monkeypatch.setattr("eeclient.providers.Path.home", lambda: tmp_path)
     (tmp_path / ".config/earthengine").mkdir(parents=True)
     monkeypatch.setenv(
         "EARTHENGINE_TOKEN", json.dumps({"refresh_token": "rt", "project": "p"})
     )
-    import eeclient.providers as providers_mod
-
-    with mock.patch.object(
-        providers_mod.GoogleAuthProvider,
-        "refresh_sync",
-        side_effect=AssertionError("refreshed at init!"),
-    ):
-        s = EESession()  # provider selected, but NOT refreshed
-    assert s._credentials is None  # deferred (D6)
-    assert s.auth_mode == "oauth"
+    with mock.patch("eeclient.providers.oauth_credentials") as oc:
+        oc.Credentials.return_value = _fake_creds()
+        s = EESession.from_default()
+        assert s.auth_mode == "oauth"
+        assert s._credentials is None  # deferred: no refresh at construction
+        s.set_credentials_sync()  # explicit sync refresh
+    assert s.access_token == "AT" and s.project_id == "p"

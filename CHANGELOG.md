@@ -12,9 +12,11 @@
   - `EESession.from_google_credentials(creds, ...)`
   - `EESession.from_application_default(...)` — opt-in Application Default Credentials
   - `EESession.from_sepal_headers(headers, ...)` — names the existing SEPAL path
-- A headerless `EESession()` now resolves credentials agnostically via a documented,
-  all-local chain: SEPAL file → `EARTHENGINE_TOKEN` → Earth Engine OAuth file. ADC is
-  never used implicitly — call `from_application_default()` to opt in.
+  - `EESession.from_default()` — resolve from the environment (opt-in)
+- Resolution is **never implicit**: a bare `EESession()` requires an explicit source.
+  `EESession.from_default()` resolves from the environment, walking local sources only:
+  SEPAL file → `EARTHENGINE_TOKEN` → Earth Engine OAuth file. ADC is not included; call
+  `from_application_default()`.
 - Live token refresh for google-auth-backed modes (removes the "file mode cannot
   self-refresh" limitation for them).
 

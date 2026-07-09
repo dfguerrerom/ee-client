@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.models import GEEHeaders, SepalHeaders
-from eeclient.sepal_credential_mixin import SepalCredentialMixin
+from eeclient.credential_mixin import CredentialMixin
 from eeclient.cache import ResponseCache
 
 import eeclient.export as _export_module
@@ -48,7 +48,7 @@ class SimpleRateLimiter:
             self._next = max(now, self._next) + 1.0 / self.qps
 
 
-class EESession(SepalCredentialMixin):
+class EESession(CredentialMixin):
     def __init__(
         self,
         sepal_headers: Optional[SepalHeaders] = None,
@@ -114,8 +114,9 @@ class EESession(SepalCredentialMixin):
         """Asynchronously create an EESession instance.
 
         Args:
-            sepal_headers (Optional[SepalHeaders]): The headers sent by SEPAL.
-                If None, will use file-based authentication.
+            sepal_headers (Optional[SepalHeaders]): SEPAL headers for SEPAL
+                session mode (required here). For other sources use an
+                EESession.from_*() factory, or EESession.from_default().
             enforce_project_id (bool, optional): If set, it cannot be changed.
                 Defaults to True.
 
@@ -198,6 +199,24 @@ class EESession(SepalCredentialMixin):
     def from_sepal_headers(cls, headers, *, enforce_project_id=True) -> "EESession":
         """Build a session from SEPAL headers (names the existing path)."""
         return cls(headers, enforce_project_id=enforce_project_id)
+
+    @classmethod
+    def from_default(cls, *, enforce_project_id=True) -> "EESession":
+        """Resolve credentials from the environment — explicit opt-in.
+
+        Walks local sources only (SEPAL file, ``EARTHENGINE_TOKEN``, Earth Engine
+        OAuth file) and fails closed in a SEPAL context. ADC is not included —
+        use ``from_application_default()``. This is opt-in: a bare ``EESession()``
+        does not auto-resolve; the caller must pick a source.
+
+        Construction does no network I/O — the token refresh is deferred to
+        ``await initialize()`` / the first ``get_headers()`` so async callers are
+        not blocked (use ``set_credentials_sync()`` for a synchronous refresh).
+        """
+        from eeclient.providers import resolve_default_provider
+
+        provider = resolve_default_provider()
+        return cls(enforce_project_id=enforce_project_id, _provider=provider)
 
     async def get_assets_folder(self) -> str:
         if self.needs_credentials_refresh():

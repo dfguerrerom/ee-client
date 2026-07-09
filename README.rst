@@ -112,13 +112,16 @@ Beyond SEPAL headers, a session can be built from any standard Google/Earth Engi
    # Application Default Credentials (explicit opt-in)
    session = EESession.from_application_default()
 
-A **headerless** ``EESession()`` resolves credentials automatically, using only local checks, in this order:
+   # Resolve from the environment (opt-in): SEPAL file / EARTHENGINE_TOKEN / EE OAuth file
+   session = EESession.from_default()
+
+Credentials are **never resolved implicitly** — a bare ``EESession()`` requires a source (pass ``sepal_headers`` or use a ``from_*`` factory). To resolve from the environment explicitly, call ``EESession.from_default()``, which walks local sources only, in this order:
 
 1. SEPAL credentials file (``~/.config/earthengine/sepal_credentials``)
 2. ``EARTHENGINE_TOKEN`` environment variable
 3. Earth Engine OAuth file (``~/.config/earthengine/credentials``)
 
-Application Default Credentials are **not** used implicitly — call ``EESession.from_application_default()`` to opt in. Inside a SEPAL environment (a ``sepal-user`` home) resolution is SEPAL-only and fails closed.
+Application Default Credentials are **not** included — call ``EESession.from_application_default()`` to use them. Inside a SEPAL environment (a ``sepal-user`` home) ``from_default()`` is SEPAL-only and fails closed.
 
 Making API Calls
 ++++++++++++++++
