@@ -1,6 +1,14 @@
 # Changelog
 
-## 2.7.0
+## 3.0.0
+
+### Breaking changes
+
+- A bare `EESession()` with no credential source now **raises** instead of resolving
+  credentials implicitly. Use `EESession.from_default()` (opt-in environment resolution)
+  or one of the `from_*()` factories; `create()` with no `sepal_headers` also raises.
+- `~/.config/earthengine/sepal_credentials` is no longer auto-discovered as a non-SEPAL
+  credential source (it was a stale-prone, non-refreshable artifact).
 
 ### Features
 
