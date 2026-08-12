@@ -99,6 +99,43 @@ class CredentialsResolutionError(EEClientError):
         super().__init__(message)
 
 
+class CredentialsFileUnrecognizedError(CredentialsResolutionError):
+    """Raised when the EE credentials file is not a shape we can build from.
+
+    Distinct from :class:`CredentialsFileUnknownError`, which is SEPAL-specific:
+    this one is raised from provider-agnostic resolution and carries the path
+    instead of SEPAL re-authentication instructions.
+    """
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        super().__init__(
+            f"{file_path} is not a usable Earth Engine credentials file: it is "
+            "not JSON, not a JSON object, or carries no refresh token. Run "
+            "`earthengine authenticate` to rewrite it, or pick an explicit "
+            "source with one of the EESession.from_*() factories."
+        )
+
+
+class ServiceAccountFileRefusedError(CredentialsResolutionError):
+    """Raised when the EE credentials file holds a service-account key.
+
+    A service-account key at ``~/.config/earthengine/credentials`` is a shared,
+    machine-wide identity. Resolving it implicitly would give every caller in a
+    multi-user container the same Earth Engine identity, so it is refused unless
+    the caller opts in.
+    """
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        super().__init__(
+            f"{file_path} holds a service-account key. Resolving it implicitly "
+            "would share one Earth Engine identity across every caller in this "
+            "process. Pass allow_service_account_file=True to opt in, or use "
+            "EESession.from_service_account()."
+        )
+
+
 # {'code': 401, 'message': 'Request had invalid authentication credentials.
 # Expected OAuth 2 access token, login cookie or other valid authentication
 # credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.',
