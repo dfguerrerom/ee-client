@@ -92,6 +92,26 @@ class CredentialMixin:
         """Refresh credentials via the active provider (sync)."""
         self._apply_snapshot(self._provider.refresh_sync())
 
+    def close(self) -> None:
+        """Release the synchronous resources this credential holder owns.
+
+        Closes ``self._service`` — a ``googleapiclient`` discovery service, which
+        holds an ``httplib2`` connection — when one is attached. Nothing in this
+        library builds that service; ``_service`` is a backward-compat attribute
+        that callers may assign themselves, so on a stock session this is a
+        no-op. Idempotent.
+
+        This does **not** close an async transport. :class:`eeclient.client.EESession`
+        owns an ``httpx.AsyncClient`` that must be closed with ``await aclose()``
+        on the loop that created it — and ``aclose()`` calls this method, so
+        ``await session.aclose()`` is the complete teardown. Reaching for
+        ``contextlib.closing(session)`` instead would leave the transport open.
+        """
+        service = self._service
+        self._service = None
+        if service is not None:
+            service.close()
+
 
 # Backward-compat alias: SEPAL is now one provider among several.
 SepalCredentialMixin = CredentialMixin

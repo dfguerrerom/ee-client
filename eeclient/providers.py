@@ -21,9 +21,11 @@ from ee import oauth as ee_oauth
 from eeclient.exceptions import (
     CredentialsFileNotFoundError,
     CredentialsFileUnknownError,
+    CredentialsFileUnrecognizedError,
     CredentialsResolutionError,
     EEClientError,
     SepalCredentialsUnavailableError,
+    ServiceAccountFileRefusedError,
 )
 from eeclient.helpers import should_verify_tls
 from eeclient.models import GoogleTokens, SepalHeaders
@@ -374,11 +376,46 @@ def _is_sepal_context() -> bool:
     return "sepal-user" in Path.home().name
 
 
-def resolve_default_provider() -> CredentialProvider:
+def _classify_credentials_file(path: Path) -> str:
+    """Classify an Earth Engine credentials file without building credentials.
+
+    Returns ``"service_account"``, ``"oauth"`` or ``"unknown"``. Reads the file;
+    never contacts a network or a token endpoint. An unreadable file raises
+    rather than classifying as ``"unknown"`` — a permission error on a file that
+    exists is an environment problem, not a malformed credential.
+    """
+    try:
+        raw = path.read_text()
+    except OSError as e:
+        raise CredentialsResolutionError(
+            f"Cannot read the Earth Engine credentials file {path}: {e}"
+        ) from e
+    except ValueError:
+        return "unknown"  # not UTF-8; read_text() raises UnicodeDecodeError
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return "unknown"
+    if not isinstance(data, dict):
+        return "unknown"
+    if data.get("type") == "service_account":
+        return "service_account"
+    if data.get("refresh_token"):
+        return "oauth"
+    return "unknown"
+
+
+def resolve_default_provider(
+    *, allow_service_account_file: bool = False
+) -> CredentialProvider:
     """Resolve a provider for a headerless ``EESession()`` — all-local, no ADC.
 
     In a SEPAL context (``sepal-user`` home) this is SEPAL-file-only and fails
     closed. Otherwise it walks local sources; ADC is never probed here (D10).
+
+    ``allow_service_account_file`` opts in to a service-account key at the
+    Earth Engine credentials path; it is refused by default because that
+    identity is shared by every caller in the process.
     """
     ee_dir = Path.home() / ".config" / "earthengine"
 
@@ -404,8 +441,23 @@ def resolve_default_provider() -> CredentialProvider:
             auth_source="earthengine_token",
         )
 
-    ee_file = ee_dir / "credentials"
+    # Resolve through ee.oauth so the file we classify is the file the OAuth
+    # loader will read — the two must not be able to disagree.
+    ee_file = Path(ee_oauth.get_credentials_path())
     if ee_file.exists():
+        kind = _classify_credentials_file(ee_file)
+        if kind == "service_account":
+            if not allow_service_account_file:
+                raise ServiceAccountFileRefusedError(str(ee_file))
+            creds, project = _service_account_credentials(ee_file, DEFAULT_SCOPES)
+            return GoogleAuthProvider(
+                creds,
+                project,
+                auth_mode="service_account",
+                auth_source="ee_service_account_file",
+            )
+        if kind == "unknown":
+            raise CredentialsFileUnrecognizedError(str(ee_file))
         creds, project = _oauth_credentials_from_ee_file(DEFAULT_SCOPES)
         return GoogleAuthProvider(
             creds, project, auth_mode="oauth", auth_source="ee_oauth_file"
@@ -413,7 +465,7 @@ def resolve_default_provider() -> CredentialProvider:
 
     raise CredentialsResolutionError(
         "No local credential source found (tried EARTHENGINE_TOKEN and the "
-        f"Earth Engine OAuth file {ee_file}). ADC is not used implicitly — call "
+        f"Earth Engine credentials file {ee_file}). ADC is not used implicitly — call "
         "EESession.from_application_default() to use Application Default "
         "Credentials."
     )

@@ -81,11 +81,19 @@ A session can be built from any standard Google/Earth Engine credential via fact
 Credentials are **never resolved implicitly** — a bare ``EESession()`` constructor call is not supported; always use a ``from_*`` factory to build a session. To resolve from the environment explicitly, call ``EESession.from_default()``, which walks local sources only, in this order:
 
 1. ``EARTHENGINE_TOKEN`` environment variable
-2. Earth Engine OAuth file (``~/.config/earthengine/credentials``)
+2. Earth Engine credentials file (``~/.config/earthengine/credentials``)
+
+The credentials file is accepted only when it holds an OAuth refresh token — the file ``earthengine authenticate`` writes. A **service-account key** at that path is refused with ``ServiceAccountFileRefusedError``: it is a machine-wide identity, so resolving it implicitly would give every caller on the host the same Earth Engine account. To use it anyway, opt in explicitly:
+
+.. code-block:: python
+
+   session = EESession.from_default(allow_service_account_file=True)
+
+Prefer ``EESession.from_service_account("sa-key.json")``, which names the key you mean. Any other file shape — unparsable, or without a refresh token — raises ``CredentialsFileUnrecognizedError``. Both errors subclass ``CredentialsResolutionError``, so a single ``except`` covers every way ``from_default()`` can fail to resolve.
 
 Application Default Credentials are **not** included — call ``EESession.from_application_default()`` to use them.
 
-To see which source a session ended up using, inspect ``session.auth_mode`` (the credential *kind*: ``file``/``oauth``/``service_account``/``adc``) and ``session.auth_source`` (the precise origin: ``earthengine_token``/``ee_oauth_file``/``service_account``/``application_default``/``google_credentials``).
+To see which source a session ended up using, inspect ``session.auth_mode`` (the credential *kind*: ``file``/``oauth``/``service_account``/``adc``/``sepal``) and ``session.auth_source`` (the precise origin: ``earthengine_token``/``ee_oauth_file``/``ee_service_account_file``/``service_account``/``application_default``/``google_credentials``/``sepal_file``/``sepal_session``).
 
 Making API Calls
 ++++++++++++++++

@@ -219,7 +219,9 @@ class EESession(CredentialMixin):
         return cls(headers, enforce_project_id=enforce_project_id)
 
     @classmethod
-    def from_default(cls, *, enforce_project_id=True) -> "EESession":
+    def from_default(
+        cls, *, enforce_project_id=True, allow_service_account_file=False
+    ) -> "EESession":
         """Resolve credentials from the environment — explicit opt-in.
 
         Walks local sources only (SEPAL file, ``EARTHENGINE_TOKEN``, Earth Engine
@@ -227,13 +229,18 @@ class EESession(CredentialMixin):
         use ``from_application_default()``. This is opt-in: a bare ``EESession()``
         does not auto-resolve; the caller must pick a source.
 
+        ``allow_service_account_file`` opts in to a service-account key at the
+        Earth Engine credentials path; refused by default (a shared identity).
+
         Construction does no network I/O — the token refresh is deferred to
         ``await initialize()`` / the first ``get_headers()`` so async callers are
         not blocked (use ``set_credentials_sync()`` for a synchronous refresh).
         """
         from eeclient.providers import resolve_default_provider
 
-        provider = resolve_default_provider()
+        provider = resolve_default_provider(
+            allow_service_account_file=allow_service_account_file
+        )
         return cls(enforce_project_id=enforce_project_id, _provider=provider)
 
     async def get_assets_folder(self) -> str:
@@ -291,10 +298,15 @@ class EESession(CredentialMixin):
         yield client
 
     async def aclose(self):
+        """Full teardown: the async transport plus any sync resources.
+
+        Must run on the loop that created the ``httpx.AsyncClient``.
+        """
         if self._client is not None:
             await self._client.aclose()
             self._client = None
         self._assets_cache.clear()
+        self.close()
 
     async def rest_call(
         self,
