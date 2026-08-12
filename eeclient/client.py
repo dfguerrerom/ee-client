@@ -291,10 +291,15 @@ class EESession(CredentialMixin):
         yield client
 
     async def aclose(self):
+        """Full teardown: the async transport plus any sync resources.
+
+        Must run on the loop that created the ``httpx.AsyncClient``.
+        """
         if self._client is not None:
             await self._client.aclose()
             self._client = None
         self._assets_cache.clear()
+        self.close()
 
     async def rest_call(
         self,
