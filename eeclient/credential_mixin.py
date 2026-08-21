@@ -101,11 +101,11 @@ class CredentialMixin:
         that callers may assign themselves, so on a stock session this is a
         no-op. Idempotent.
 
-        This does **not** close an async transport. :class:`eeclient.client.EESession`
-        owns an ``httpx.AsyncClient`` that must be closed with ``await aclose()``
-        on the loop that created it — and ``aclose()`` calls this method, so
-        ``await session.aclose()`` is the complete teardown. Reaching for
-        ``contextlib.closing(session)`` instead would leave the transport open.
+        This does **not** close async transports. :class:`eeclient.client.EESession`
+        owns one ``httpx.AsyncClient`` per event loop that drives it; awaiting
+        ``aclose()`` from any of those loops closes them all and then calls this
+        method. Reaching for ``contextlib.closing(session)`` instead would leave
+        those transports open.
         """
         service = self._service
         self._service = None

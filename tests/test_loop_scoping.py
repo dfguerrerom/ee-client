@@ -10,13 +10,16 @@ both situations.
 
 import asyncio
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 
 from eeclient.client import EESession
+from eeclient.loopstate import release_sockets
 from eeclient.providers import CredentialSnapshot
 
 
@@ -41,6 +44,32 @@ class _StubProvider:
 
     async def refresh(self):
         raise AssertionError("credentials must not be refreshed in these tests")
+
+
+class _ConcurrentRefreshProvider(_StubProvider):
+    """Expired credentials whose refresh exposes duplicate cross-loop work."""
+
+    def __init__(self):
+        self.calls = 0
+        self._guard = threading.Lock()
+        self._refreshers = threading.Barrier(2)
+
+    def initial_snapshot(self):
+        return None
+
+    async def refresh(self):
+        with self._guard:
+            self.calls += 1
+        try:
+            await asyncio.to_thread(self._refreshers.wait, 0.5)
+        except threading.BrokenBarrierError:
+            pass
+        return CredentialSnapshot(
+            access_token="refreshed-token",
+            project_id="ee-project",
+            expiry_date=int((time.time() + 3600) * 1000),
+            native=object(),
+        )
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -94,6 +123,46 @@ def _failures(results):
     return [r for r in results if isinstance(r, BaseException)]
 
 
+def _wait_until(predicate, timeout=5):
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("condition was not met before the deadline")
+        time.sleep(0.01)
+
+
+def _pooled_sockets(client):
+    connections = client._transport._pool.connections
+    return [
+        connection._connection._network_stream.get_extra_info("socket")
+        for connection in connections
+    ]
+
+
+def test_release_sockets_uses_the_network_stream_socket_accessor():
+    """Cleanup must not depend on a particular anyio stream-wrapper layout."""
+    owned, peer = socket.socketpair()
+    stream = SimpleNamespace(
+        get_extra_info=lambda name: owned if name == "socket" else None
+    )
+    client = SimpleNamespace(
+        _transport=SimpleNamespace(
+            _pool=SimpleNamespace(
+                connections=[
+                    SimpleNamespace(_connection=SimpleNamespace(_network_stream=stream))
+                ]
+            )
+        )
+    )
+
+    try:
+        release_sockets(client)
+        assert owned.fileno() == -1
+    finally:
+        owned.close()
+        peer.close()
+
+
 def test_a_closed_loop_does_not_break_the_next_burst(session, url):
     """The restart case: the loop the session first used is closed and replaced."""
     first = asyncio.new_event_loop()
@@ -132,6 +201,41 @@ def test_two_live_loops_share_one_session(session, url):
     assert all(r == {"ok": True} for r in results)
 
 
+def test_two_live_loops_share_one_credential_refresh():
+    """Shared credentials must not be refreshed concurrently by two loops."""
+    provider = _ConcurrentRefreshProvider()
+    session = EESession(_provider=provider)
+    start = threading.Barrier(2)
+    loops = [asyncio.new_event_loop(), asyncio.new_event_loop()]
+    threads = [threading.Thread(target=loop.run_forever, daemon=True) for loop in loops]
+    for thread in threads:
+        thread.start()
+
+    async def get_headers_together():
+        start.wait()
+        return await session.get_headers()
+
+    try:
+        futures = [
+            asyncio.run_coroutine_threadsafe(get_headers_together(), loop)
+            for loop in loops
+        ]
+        headers = [future.result(timeout=5) for future in futures]
+    finally:
+        for loop in loops:
+            loop.call_soon_threadsafe(loop.stop)
+        for thread in threads:
+            thread.join(timeout=5)
+        for loop in loops:
+            loop.close()
+
+    assert provider.calls == 1
+    assert [header.authorization for header in headers] == [
+        "Bearer refreshed-token",
+        "Bearer refreshed-token",
+    ]
+
+
 def test_one_loop_keeps_one_client(session, url, loop):
     """Resources are per loop, not per call — the pool must survive between calls."""
     loop.run_until_complete(_burst(session, url, 2)())
@@ -155,8 +259,8 @@ def test_each_loop_gets_its_own_client(session, url):
     assert private is not other
 
 
-def test_an_incomplete_cache_task_does_not_outlive_its_loop(session, url, loop):
-    """A task orphaned by a closed loop must not be awaited from the next one."""
+def test_a_cancelled_cache_task_does_not_outlive_its_loop(session, url, loop):
+    """A cached task from a closed loop must not be read from the next one."""
 
     async def never():
         await asyncio.sleep(300)
@@ -164,10 +268,13 @@ def test_an_incomplete_cache_task_does_not_outlive_its_loop(session, url, loop):
     first = asyncio.new_event_loop()
 
     async def start_and_abandon():
-        asyncio.ensure_future(session._assets_cache.get_or_fetch("k", never))
+        task = asyncio.ensure_future(session._assets_cache.get_or_fetch("k", never))
         await asyncio.sleep(0.05)
+        return task
 
-    first.run_until_complete(start_and_abandon())
+    abandoned = first.run_until_complete(start_and_abandon())
+    abandoned.cancel()
+    first.run_until_complete(asyncio.gather(abandoned, return_exceptions=True))
     first.close()
 
     async def fetch():
@@ -233,14 +340,103 @@ def test_aclose_releases_every_loop_that_ran(session, url):
     try:
         caller.run_until_complete(_answer(session, url))
         caller.run_until_complete(session.aclose())
-        # The other loop's client is closed on that loop, so give it a turn.
-        asyncio.run_coroutine_threadsafe(asyncio.sleep(0.2), private).result(timeout=5)
         remaining = caller.run_until_complete(_ensure_fresh(session))
     finally:
         caller.close()
         private.call_soon_threadsafe(private.stop)
 
     assert remaining is not None
+
+
+def test_aclose_waits_for_clients_on_other_loops(session):
+    """Teardown is not complete until a remote loop has closed its client."""
+    private = asyncio.new_event_loop()
+    caller = asyncio.new_event_loop()
+    loops = [private, caller]
+    threads = [
+        threading.Thread(target=event_loop.run_forever, daemon=True)
+        for event_loop in loops
+    ]
+    for thread in threads:
+        thread.start()
+
+    client = asyncio.run_coroutine_threadsafe(session._ensure_client(), private).result(
+        timeout=5
+    )
+    blocked = threading.Event()
+    release = threading.Event()
+
+    def block_private_loop():
+        blocked.set()
+        release.wait(timeout=5)
+
+    private.call_soon_threadsafe(block_private_loop)
+    assert blocked.wait(timeout=5)
+    close_future = asyncio.run_coroutine_threadsafe(session.aclose(), caller)
+
+    try:
+        with pytest.raises(TimeoutError):
+            close_future.result(timeout=0.1)
+    finally:
+        release.set()
+        close_future.result(timeout=5)
+        for event_loop in loops:
+            event_loop.call_soon_threadsafe(event_loop.stop)
+        for thread in threads:
+            thread.join(timeout=5)
+        for event_loop in loops:
+            event_loop.close()
+
+    assert client.is_closed
+
+
+def test_aclose_falls_back_when_the_remote_loop_stops(session, url):
+    """A loop stopping after close is scheduled must not hang teardown."""
+    private = asyncio.new_event_loop()
+    caller = asyncio.new_event_loop()
+    loops = [private, caller]
+    threads = [
+        threading.Thread(target=event_loop.run_forever, daemon=True)
+        for event_loop in loops
+    ]
+    for thread in threads:
+        thread.start()
+
+    asyncio.run_coroutine_threadsafe(_answer(session, url), private).result(timeout=5)
+    client = asyncio.run_coroutine_threadsafe(session._ensure_client(), private).result(
+        timeout=5
+    )
+    sockets = _pooled_sockets(client)
+    assert sockets
+
+    blocked = threading.Event()
+    release = threading.Event()
+
+    def block_private_loop():
+        blocked.set()
+        release.wait(timeout=5)
+
+    private.call_soon_threadsafe(block_private_loop)
+    assert blocked.wait(timeout=5)
+    private.call_soon_threadsafe(private.stop)
+    close_future = asyncio.run_coroutine_threadsafe(session.aclose(), caller)
+
+    try:
+        _wait_until(lambda: len(session._loops) == 0)
+        release.set()
+        close_future.result(timeout=2)
+        assert all(sock.fileno() == -1 for sock in sockets)
+    finally:
+        release.set()
+        if not close_future.done():
+            close_future.cancel()
+        threads[0].join(timeout=5)
+        if not private.is_running():
+            private.run_until_complete(asyncio.sleep(0))
+        caller.call_soon_threadsafe(caller.stop)
+        threads[1].join(timeout=5)
+        for event_loop in loops:
+            event_loop.close()
 
 
 async def _ensure_fresh(session):
@@ -250,14 +446,20 @@ async def _ensure_fresh(session):
 
 def test_a_closed_loop_releases_its_resources(session, url):
     """Repeated loop churn must not accumulate one pool per dead loop."""
+    spent_sockets = []
     for _ in range(3):
         spent = asyncio.new_event_loop()
         spent.run_until_complete(_answer(session, url))
+        client = spent.run_until_complete(session._ensure_client())
+        sockets = _pooled_sockets(client)
+        assert sockets
+        spent_sockets.extend(sockets)
         spent.close()
 
     live = asyncio.new_event_loop()
     try:
         live.run_until_complete(_answer(session, url))
         assert len(session._loops) == 1
+        assert all(sock.fileno() == -1 for sock in spent_sockets)
     finally:
         live.close()
