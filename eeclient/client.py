@@ -11,7 +11,12 @@ from contextlib import asynccontextmanager
 from eeclient.exceptions import EEClientError, EERestException
 from eeclient.models import GEEHeaders, SepalHeaders
 from eeclient.credential_mixin import CredentialMixin
-from eeclient.cache import ResponseCache
+from eeclient.loopstate import (
+    QPS_LIMIT,
+    LoopResourceRegistry,
+    LoopResources,
+    SimpleRateLimiter,
+)
 
 import eeclient.export as _export_module
 import eeclient.data as _operations_module
@@ -29,23 +34,6 @@ logger = logging.getLogger("eeclient")
 
 # Default values that won't raise exceptions during import
 EARTH_ENGINE_API_URL = "https://earthengine.googleapis.com/v1alpha"
-
-
-class SimpleRateLimiter:
-    def __init__(self, qps: float | None):
-        self.qps = qps
-        self._lock = asyncio.Lock()
-        self._next = 0.0
-
-    async def acquire(self):
-        if not self.qps or self.qps <= 0:
-            return
-        async with self._lock:
-            now = asyncio.get_running_loop().time()
-            wait = max(0.0, self._next - now)
-            if wait:
-                await asyncio.sleep(wait)
-            self._next = max(now, self._next) + 1.0 / self.qps
 
 
 class EESession(CredentialMixin):
@@ -72,15 +60,10 @@ class EESession(CredentialMixin):
         Raises:
             EEClientError: If no credential source is provided.
         """
-        self._inflight = asyncio.BoundedSemaphore(30)
-        self._rate = SimpleRateLimiter(60)
-
-        self._auth_refresh_lock = asyncio.Lock()
-
-        self._client: httpx.AsyncClient | None = None
-        self._client_lock = asyncio.Lock()
-
-        self._assets_cache = ResponseCache(ttl=10.0, max_size=100)
+        # Locks, semaphores, tasks and transports each bind to one event loop,
+        # so they are scoped per loop; the session keeps only what survives one.
+        self._loops = LoopResourceRegistry()
+        self._rate = SimpleRateLimiter(QPS_LIMIT)
 
         self.enforce_project_id = enforce_project_id
         super().__init__(sepal_headers, provider=_provider)
@@ -94,6 +77,19 @@ class EESession(CredentialMixin):
                 "Call initialize() or use create() to fetch credentials."
             )
         )
+
+    def _resources(self) -> LoopResources:
+        """The asyncio state belonging to the running loop."""
+        return self._loops.current()
+
+    @property
+    def _assets_cache(self):
+        """The response cache of the running loop.
+
+        Cached entries hold in-flight ``asyncio.Task`` objects, which only the
+        loop that scheduled them can await, so the cache follows the loop.
+        """
+        return self._resources().cache
 
     async def initialize(self) -> "EESession":
         """Asynchronously initialize the session by fetching credentials if needed.
@@ -273,16 +269,17 @@ class EESession(CredentialMixin):
     async def get_headers(self):
         # Only one task refreshes the token; others wait briefly.
         if self.needs_credentials_refresh():
-            async with self._auth_refresh_lock:
+            async with self._resources().auth_refresh_lock:
                 if self.needs_credentials_refresh():  # double-check after lock
                     await self.set_credentials()
         return self.get_current_headers()
 
     async def _ensure_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            async with self._client_lock:
-                if self._client is None:
-                    self._client = httpx.AsyncClient(
+        resources = self._resources()
+        if resources.client is None:
+            async with resources.client_lock:
+                if resources.client is None:
+                    resources.client = httpx.AsyncClient(
                         http2=True,
                         timeout=httpx.Timeout(connect=60, read=360, write=60, pool=60),
                         limits=httpx.Limits(
@@ -290,7 +287,7 @@ class EESession(CredentialMixin):
                         ),
                         verify=getattr(self, "verify_ssl", True),
                     )
-        return self._client
+        return resources.client
 
     @asynccontextmanager
     async def get_client(self):
@@ -298,14 +295,28 @@ class EESession(CredentialMixin):
         yield client
 
     async def aclose(self):
-        """Full teardown: the async transport plus any sync resources.
+        """Full teardown: every loop's async transport plus the sync resources.
 
-        Must run on the loop that created the ``httpx.AsyncClient``.
+        Callable from any loop that has driven the session. Only the loop that
+        opened a transport may close it, so the running loop's client is closed
+        here and another live loop's client is handed back to that loop; loops
+        that can no longer run have their sockets released directly.
         """
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
-        self._assets_cache.clear()
+        try:
+            here = asyncio.get_running_loop()
+        except RuntimeError:
+            here = None
+
+        for loop, resources in self._loops.drain():
+            client = resources.client
+            resources.client = None
+            resources.cache.clear()
+            if client is None:
+                continue
+            if loop is here:
+                await client.aclose()
+            else:
+                asyncio.run_coroutine_threadsafe(client.aclose(), loop)
         self.close()
 
     async def rest_call(
@@ -328,7 +339,7 @@ class EESession(CredentialMixin):
                 headers = (await self.get_headers()).model_dump(by_alias=True)
                 url_with_project = self.set_url_project(url)
 
-                async with self._inflight:
+                async with self._resources().inflight:
                     await self._rate.acquire()
                     async with self.get_client() as client:
 
