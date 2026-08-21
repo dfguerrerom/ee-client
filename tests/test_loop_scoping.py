@@ -9,6 +9,7 @@ both situations.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import socket
 import threading
@@ -375,7 +376,9 @@ def test_aclose_waits_for_clients_on_other_loops(session):
     close_future = asyncio.run_coroutine_threadsafe(session.aclose(), caller)
 
     try:
-        with pytest.raises(TimeoutError):
+        # Not the builtin: concurrent.futures.TimeoutError only became an alias
+        # for it in 3.11, and before that it derives from Exception, not OSError.
+        with pytest.raises(concurrent.futures.TimeoutError):
             close_future.result(timeout=0.1)
     finally:
         release.set()
