@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from eeclient.client import EESession
@@ -59,12 +61,16 @@ def test_close_without_a_service_is_a_no_op():
 def test_close_does_not_touch_an_async_transport():
     """EESession inherits close(); its httpx client still needs `await aclose()`."""
     session = EESession(_provider=_StubProvider())
-    sentinel = object()
-    session._client = sentinel
+    loop = asyncio.new_event_loop()
+    try:
+        client = loop.run_until_complete(session._ensure_client())
 
-    session.close()
+        session.close()
 
-    assert session._client is sentinel
+        assert client.is_closed is False
+    finally:
+        loop.run_until_complete(client.aclose())
+        loop.close()
 
 
 @pytest.mark.asyncio
@@ -73,9 +79,11 @@ async def test_aclose_is_the_complete_teardown():
     session = EESession(_provider=_StubProvider())
     service = _SpyService()
     session._service = service
+    client = await session._ensure_client()
 
     await session.aclose()
 
     assert service.closed == 1
     assert session._service is None
-    assert session._client is None
+    assert client.is_closed
+    assert len(session._loops) == 0
