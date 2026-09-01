@@ -21,11 +21,12 @@ concurrency and so must stay loop-free by construction.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import threading
 import time
 import weakref
-from typing import List, Optional, Tuple
+from typing import Awaitable, Callable, List, Optional, Tuple
 
 import httpx
 
@@ -66,6 +67,40 @@ class SimpleRateLimiter:
             await asyncio.sleep(delay)
 
 
+class AsyncSingleFlight:
+    """Share one in-progress async operation across event loops."""
+
+    def __init__(self) -> None:
+        self._guard = threading.Lock()
+        self._pending: Optional[concurrent.futures.Future] = None
+
+    async def run(self, operation: Callable[[], Awaitable[None]]) -> None:
+        with self._guard:
+            pending = self._pending
+            if pending is None:
+                pending = concurrent.futures.Future()
+                self._pending = pending
+                leader = True
+            else:
+                leader = False
+
+        if not leader:
+            await asyncio.shield(asyncio.wrap_future(pending))
+            return
+
+        try:
+            await operation()
+        except BaseException as error:
+            pending.set_exception(error)
+            raise
+        else:
+            pending.set_result(None)
+        finally:
+            with self._guard:
+                if self._pending is pending:
+                    self._pending = None
+
+
 class LoopResources:
     """Everything a session owns that belongs to exactly one event loop."""
 
@@ -88,8 +123,9 @@ def release_sockets(client: httpx.AsyncClient) -> None:
     back now rather than whenever the cyclic collector next reaches them; uvloop
     already released them at ``loop.close()``, plain asyncio did not.
 
-    The walk reads httpcore and anyio internals, so it is best effort: a layout
-    change costs deferred cleanup, never an exception.
+    Locating the network stream still reads httpcore internals, so this is best
+    effort: a layout change costs deferred cleanup, never an exception. Once
+    found, prefer its socket accessor over depending on anyio's wrapper layout.
     """
     try:
         pool = client._transport._pool  # type: ignore[attr-defined]
@@ -97,6 +133,15 @@ def release_sockets(client: httpx.AsyncClient) -> None:
     except Exception:  # pragma: no cover - depends on httpcore internals
         return
     for connection in connections:
+        try:
+            stream = connection._connection._network_stream
+            socket = stream.get_extra_info("socket")
+            socket = getattr(socket, "_sock", socket)
+            if socket is not None and hasattr(socket, "close"):
+                socket.close()
+                continue
+        except Exception:  # pragma: no cover - depends on httpcore internals
+            pass
         try:
             stream = connection._connection._network_stream
             for attribute in ("_stream", "transport_stream", "_transport"):
@@ -108,6 +153,26 @@ def release_sockets(client: httpx.AsyncClient) -> None:
                 socket.close()
         except Exception:  # pragma: no cover - depends on httpcore internals
             continue
+
+
+async def await_remote_close(
+    client: httpx.AsyncClient,
+    loop: asyncio.AbstractEventLoop,
+    future: concurrent.futures.Future,
+) -> None:
+    """Wait for a client close, falling back if its loop stops first."""
+    wrapped = asyncio.wrap_future(future)
+    while True:
+        done, _ = await asyncio.wait((wrapped,), timeout=0.05)
+        if done:
+            await wrapped
+            return
+        # Scheduling can succeed just before a queued loop.stop(), leaving the
+        # coroutine parked forever on a loop that will not take another turn.
+        if not loop.is_running():
+            future.cancel()
+            release_sockets(client)
+            return
 
 
 class LoopResourceRegistry:

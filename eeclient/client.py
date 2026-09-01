@@ -13,9 +13,12 @@ from eeclient.models import GEEHeaders, SepalHeaders
 from eeclient.credential_mixin import CredentialMixin
 from eeclient.loopstate import (
     QPS_LIMIT,
+    AsyncSingleFlight,
     LoopResourceRegistry,
     LoopResources,
     SimpleRateLimiter,
+    await_remote_close,
+    release_sockets,
 )
 
 import eeclient.export as _export_module
@@ -64,6 +67,7 @@ class EESession(CredentialMixin):
         # so they are scoped per loop; the session keeps only what survives one.
         self._loops = LoopResourceRegistry()
         self._rate = SimpleRateLimiter(QPS_LIMIT)
+        self._credential_refresh = AsyncSingleFlight()
 
         self.enforce_project_id = enforce_project_id
         super().__init__(sepal_headers, provider=_provider)
@@ -90,6 +94,10 @@ class EESession(CredentialMixin):
         loop that scheduled them can await, so the cache follows the loop.
         """
         return self._resources().cache
+
+    async def set_credentials(self) -> None:
+        """Refresh shared credentials once across every loop using the session."""
+        await self._credential_refresh.run(super().set_credentials)
 
     async def initialize(self) -> "EESession":
         """Asynchronously initialize the session by fetching credentials if needed.
@@ -307,17 +315,31 @@ class EESession(CredentialMixin):
         except RuntimeError:
             here = None
 
-        for loop, resources in self._loops.drain():
-            client = resources.client
-            resources.client = None
-            resources.cache.clear()
-            if client is None:
-                continue
-            if loop is here:
-                await client.aclose()
-            else:
-                asyncio.run_coroutine_threadsafe(client.aclose(), loop)
-        self.close()
+        remote_closes = []
+        try:
+            for loop, resources in self._loops.drain():
+                client = resources.client
+                resources.client = None
+                resources.cache.clear()
+                if client is None:
+                    continue
+                if loop is here:
+                    await client.aclose()
+                    continue
+
+                close = client.aclose()
+                try:
+                    future = asyncio.run_coroutine_threadsafe(close, loop)
+                except RuntimeError:
+                    close.close()
+                    release_sockets(client)
+                else:
+                    remote_closes.append(await_remote_close(client, loop, future))
+
+            if remote_closes:
+                await asyncio.gather(*remote_closes)
+        finally:
+            self.close()
 
     async def rest_call(
         self,
