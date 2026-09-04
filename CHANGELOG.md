@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.1.2
+
+### Packaging
+
+- `tenacity` is no longer a dependency. It was declared but never imported — the
+  retry logic in `rest_call` is hand-rolled — so it was pulling an unused package
+  into every install.
+
+- `eeclient/oauth_app.py` is no longer installed. It is a local development helper
+  (hardcoded client-secret path, `exit(1)` at import time) whose `flask` import
+  lives only in the `dev` extra, so `import eeclient.oauth_app` failed on any real
+  install. It now lives in `scripts/`, outside the package. Nothing in the library
+  imported it.
+
+### Behavior changes
+
+- The minimum supported Python is now **3.10**. Nothing in the code required it,
+  but `earthengine-api`, `google-auth` and `requests` have all moved their own
+  floor to 3.10, so a 3.9 install resolved year-old versions of them.
+
 ## 3.1.1
 
 ### Fixes
