@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, Union
 
 import os
 import asyncio
@@ -350,8 +350,15 @@ class EESession(CredentialMixin):
         max_attempts: int = 4,
         initial_wait: float = 1,
         max_wait: float = 60,
-    ) -> Dict[str, Any]:
-        """Async REST call with retry logic"""
+        raw: bool = False,
+    ) -> Union[Dict[str, Any], bytes]:
+        """Async REST call with retry logic.
+
+        ``raw=True`` returns the response body as bytes instead of decoding it
+        as JSON, for endpoints that answer with an image rather than a
+        document (``image:computePixels``). Errors are unaffected: the failure
+        path already inspects ``Content-Type`` before parsing.
+        """
 
         attempt = 0
         last_error = None
@@ -398,6 +405,9 @@ class EESession(CredentialMixin):
                                     f"Request failed with HTTP error: {error_data}"
                                 )
                                 raise EERestException(error_data)
+
+                        if raw:
+                            return response.content
 
                         try:
                             return response.json()

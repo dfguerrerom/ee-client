@@ -14,6 +14,16 @@ class OperationsProtocol(Protocol):
         format: Optional[str] = None,
     ) -> dict: ...
 
+    async def compute_pixels_async(
+        self,
+        ee_image: Image,
+        grid: Optional[dict] = None,
+        bands: Optional[List[str]] = None,
+        file_format: str = "GEO_TIFF",
+        visualization_options: Optional[dict] = None,
+        workload_tag: Optional[str] = None,
+    ) -> bytes: ...
+
     async def get_info_async(
         self,
         ee_object: Union[ComputedObject, None] = None,

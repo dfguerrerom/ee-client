@@ -74,6 +74,64 @@ async def get_map_id_async(
     }
 
 
+async def compute_pixels_async(
+    client: "EESession",
+    ee_image: Image,
+    grid: Optional[dict] = None,
+    bands: Optional[List[str]] = None,
+    file_format: str = "GEO_TIFF",
+    visualization_options: Optional[dict] = None,
+    workload_tag: Optional[str] = None,
+) -> bytes:
+    """Async version of ee.data.computePixels.
+
+    Computes an image and returns its pixels as an encoded file, on this
+    session's credentials rather than the ambient ``ee`` module's, so a
+    multi-user host fetches as the connected user.
+
+    Earth Engine caps a single request at 48 MiB counted on **uncompressed**
+    pixels (width x height x bytes per pixel x bands), independent of how well
+    the result compresses; a larger grid is refused outright. A caller wanting
+    a big area tiles the grid itself and requests each tile in turn. The
+    session's rate limiter and inflight semaphore already meter those requests,
+    and ``rest_call`` already retries 429/401/5xx, so the caller needs no retry
+    loop of its own.
+
+    Args:
+        client: The asynchronous session object.
+        ee_image: The image to compute.
+        grid: The pixel grid to fetch, as ``crsCode`` / ``affineTransform`` /
+            ``dimensions``. Defaults to the data's native grid.
+        bands: The bands to return. Defaults to all of them.
+        file_format: An Earth Engine image file format, ``GEO_TIFF`` by
+            default. The client-side conversions ``ee.data.computePixels``
+            offers (``NUMPY_NDARRAY``) are not applied; this returns the bytes
+            the service sent.
+        visualization_options: Visualization options to apply before the
+            pixels are computed.
+        workload_tag: An optional workload tag.
+
+    Returns:
+        The encoded image, as bytes.
+    """
+    url = "https://earthengine.googleapis.com/v1/projects/{project}/image:computePixels"
+
+    request_body = {
+        "expression": serializer.encode(ee_image, for_cloud_api=True),
+        "fileFormat": _cloud_api_utils.convert_to_image_file_format(file_format),
+    }
+    if grid is not None:
+        request_body["grid"] = grid
+    if bands is not None:
+        request_body["bandIds"] = _cloud_api_utils.convert_to_band_list(bands)
+    if visualization_options is not None:
+        request_body["visualizationOptions"] = visualization_options
+    if workload_tag is not None:
+        request_body["workloadTag"] = workload_tag
+
+    return await client.rest_call("POST", url, data=request_body, raw=True)
+
+
 async def get_info_async(
     client: "EESession",
     ee_object: Union[ComputedObject, None] = None,
