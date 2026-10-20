@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.1
+
+### Fixes
+
+- Accept fractional `completeWorkUnits` in Earth Engine task stages, preventing
+  validation errors when submitting or polling exports.
+
 ## 3.2.1
 
 ### Fixes
