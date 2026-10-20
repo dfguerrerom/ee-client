@@ -27,7 +27,7 @@ class Stage(CamelCaseModel):
     # The Cloud API omits these fields on a stage until that stage has
     # reported progress, so they must be optional to avoid breaking polling
     # of a freshly-RUNNING task.
-    complete_work_units: Optional[int] = None
+    complete_work_units: Optional[float] = None
     total_work_units: Optional[str] = None
     description: Optional[str] = None
 
