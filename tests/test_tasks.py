@@ -92,3 +92,37 @@ def test_task_preserves_stage_work_units(work_units):
         task.model_dump(by_alias=True)["metadata"]["stages"][0]["completeWorkUnits"]
         == work_units
     )
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_posts_to_cancel_url():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from eeclient.tasks import cancel_task_async
+
+    client = MagicMock()
+    client.rest_call = AsyncMock(return_value={})
+
+    assert await cancel_task_async(client, "ABC123") is None
+
+    client.rest_call.assert_awaited_once()
+    args, kwargs = client.rest_call.call_args
+    assert args[0] == "POST"
+    assert args[1] == (
+        "{earth_engine_api_url}/projects/{project}/operations/ABC123:cancel"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_propagates_rest_errors():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from eeclient.exceptions import EERestException
+    from eeclient.tasks import cancel_task_async
+
+    client = MagicMock()
+    error = EERestException({"code": 400, "message": "already done"})
+    client.rest_call = AsyncMock(side_effect=error)
+
+    with pytest.raises(EERestException):
+        await cancel_task_async(client, "ABC123")
