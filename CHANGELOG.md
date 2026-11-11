@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.0
+
+### Features
+
+- Add `cancel_task_async` (and `cancel_task`) to request cancellation of an
+  Earth Engine task; `EERestException` reaches the caller when the cancel is
+  refused.
+
 ## 3.3.1
 
 ### Fixes
