@@ -136,6 +136,20 @@ async def get_task_by_name_async(
     return None
 
 
+async def cancel_task_async(client: "EESession", task_id: str) -> None:
+    """Request cancellation of a task.
+
+    Earth Engine only accepts the request: the task stays in
+    ``CANCEL_REQUESTED`` until it stops. ``EERestException`` is raised when
+    Earth Engine refuses the cancel, for example for a finished task.
+
+    Args:
+        task_id: the task ID, as in ``Task.id``
+    """
+    url = "{earth_engine_api_url}/projects/{project}/operations/" + task_id + ":cancel"
+    await client.rest_call("POST", url, data={})
+
+
 # Backward compatibility aliases
 async def get_tasks(*args, **kwargs):
     return await get_tasks_async(*args, **kwargs)
@@ -147,3 +161,7 @@ async def get_task(*args, **kwargs):
 
 async def get_task_by_name(*args, **kwargs):
     return await get_task_by_name_async(*args, **kwargs)
+
+
+async def cancel_task(*args, **kwargs):
+    return await cancel_task_async(*args, **kwargs)
